@@ -62,7 +62,8 @@ export class ReactiveEffect<T = any> {
   }
 
   stop() {
-
+    console.log(1);
+    
   }
 }
 
