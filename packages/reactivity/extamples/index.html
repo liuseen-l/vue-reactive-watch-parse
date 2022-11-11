@@ -12,21 +12,25 @@
 
     <script>
       const app = document.querySelector("#app");
-      const { effect, reactive } = VueReactivity;
+      const { effect, reactive, computed } = VueReactivity;
       const obj = { name: 1, age: 123, c: "da" };
-      const reacObj = reactive(obj);
-      effect(() => {
-        // console.log(reacObj.name);
-        // effect(() => {
-        //   app.textContent= reacObj.age
-        // });
-        // console.log(reacObj.c);
-        reacObj.age = Math.random()
+      const state = reactive(obj);
+      let runner = effect(() => {
+        console.log(reacObj.name);
+        effect(() => {
+          app.textContent = reacObj.age;
+        });
+        console.log(reacObj.c);
+        // reacObj.age = Math.random();
+        app.innerHTML = reacObj.name;
       });
 
+      // runner();
       setTimeout(() => {
-        reacObj.age = 14;
-      }, 2000);
+        reacObj.name = 14;
+      }, 1000);
+
+      // 如果依赖的值没有发生变化，不会重新执行
     </script>
   </body>
 </html>

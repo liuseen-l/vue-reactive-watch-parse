@@ -13,9 +13,10 @@ const packagesDir = path.resolve(__dirname, 'packages');   // /monorope2/package
 const packageDir = path.resolve(packagesDir, process.env.TARGET); // 要打包的入口 monorope2/packages/reactivity
 const resolve = p => path.resolve(packageDir, p); // 以打包的目录解析文件  monorope2/packages/reactivity/package.json
 // packageFormats = process.env.FORMATS（这个东西是dev.js中const formats = args.f || 'global'的配置）这里args.f是命令行参数
+const pkg = require(resolve('package.json')); // 拿到package.json中的内容
 const packageConfigs = packageFormats || pkg.buildOptions.formats; //    稍后打包所有文件的时候 可能不会有packageFormats值
 const name = packageConfigs.filename || path.basename(packageDir); // 可以取到打包的名字了 reactivity 
-const pkg = require(resolve('package.json')); // 拿到package.json中的内容
+
 
 const outputConfig = {
   'esm-bundler': {
@@ -32,6 +33,14 @@ const outputConfig = {
   }
 }
 
+// 将ts转化成js文件
+const tsPlugin = ts({
+  // tsconfig: path.resolve(__dirname, 'tsconfig.json'),
+  cacheRoot: path.resolve(__dirname, 'node_modules/.rts2_cache'), // 设置缓存
+  tsconfigOverride: {
+    exclude: ['**/__tests__', 'test-dts']
+  }
+})
 
 function createConfig(format, output) {
   output.sourcemap = sourcemap; // 添加sourcemap  
@@ -48,7 +57,7 @@ function createConfig(format, output) {
     external,
     plugins: [
       json(),
-      ts(), // 将ts转化成js文件
+      tsPlugin,
       commonjs(),
       nodeResolve()
     ]

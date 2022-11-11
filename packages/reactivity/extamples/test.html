@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+    <!-- <script src="./reactivity.global.js"></script> -->
+    <script src="../dist//reactivity.global.js"></script>
+  </head>
+  <body>
+    <div id="app"></div>
+
+    <script>
+      const app = document.querySelector("#app");
+      const { effect, reactive , targetMap} = VueReactivity;
+
+      const original = { foo: 1, bar: 1 };
+      const original2 = { bar: 1 };
+      const state = reactive(original);
+      const state2 = reactive(original2);
+
+      let count1 = 0;
+      let count2 = 0;
+      effect(() => {
+        count1++;
+        state.foo;
+        console.log(state.foo + "foo");
+        effect(() => {
+          console.log(state2.bar + "infoo");
+          count2++;
+        });
+        state.bar;
+        console.log(state.bar + "bar");
+      });
+
+      for(let i= 0 ;i< 10000 ;i++){
+        state.foo++;
+        console.log(targetMap);
+      }
+      // expect(count1).toBe(2);
+      // expect(count2).toBe(2);
+      state.bar++;
+      // expect(count1).toBe(3);
+      // expect(count2).toBe(3);
+      state2.bar++;
+      // expect(count1).toBe(3);
+
+    </script>
+  </body>
+</html>

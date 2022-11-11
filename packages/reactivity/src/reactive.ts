@@ -1,26 +1,7 @@
 import { isObject } from '@vue/shared'
-import { track } from './effect'
 
+import { mutableHandlers } from './baseHandlers'
 
-
-const mutableHandlers: ProxyHandler<Record<any, any>> = {
-  get(target, key, recevier) { // 代理对象的本身
-    // 如果target已经被代理过了就直接返回true
-    if (key === ReactiveFlags.IS_REACTIVE) {
-      return true
-    }
-    // 触发getter收集副作用函数effect
-    track(target, key)
-
-
-
-    return Reflect.get(target, key, recevier)
-
-  },
-  set(target, key, value, recevier) {
-    return Reflect.set(target, key, value, recevier)
-  }
-}
 
 const reactiveMap = new WeakMap<Target, any>(); // 缓存代理过的target
 
@@ -49,12 +30,8 @@ export function createReactiveObject(target: Target) {
   const proxy = new Proxy(target, mutableHandlers) // 数据劫持
 
   reactiveMap.set(target, proxy) // 缓存
-
-
   return proxy // 返回代理
 }
-
-
 
 export function reactive(target: object) {
   return createReactiveObject(target)
@@ -63,7 +40,6 @@ export function reactive(target: object) {
 export function readonly(target: object) {
 
 }
-
 
 export function shallowReactive(target: object) {
 
@@ -74,6 +50,30 @@ export function shallowReadOnly(target: object) {
 }
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 export interface Target {
   [ReactiveFlags.SKIP]?: boolean
   [ReactiveFlags.IS_REACTIVE]?: boolean
@@ -82,7 +82,6 @@ export interface Target {
   [ReactiveFlags.RAW]?: any
 }
 
-
 export const enum ReactiveFlags {
   SKIP = '__v_skip',
   IS_REACTIVE = '__v_isReactive', // 一个对象已经被代理过的标志
@@ -90,3 +89,16 @@ export const enum ReactiveFlags {
   IS_SHALLOW = '__v_isShallow',
   RAW = '__v_raw'
 }
+
+export function toRaw<T>(observed: T): T {
+  // 如果传入的对象是一个响应式对象,例如reactive代理的响应式对象,可以访问该代理对象的'__v_raw'属性,这个属性会返回代理对象的原始对象
+  const raw = observed && (observed as Target)[ReactiveFlags.RAW]
+  // 如果这里获取到了原始对象,但是这个原始对象还可能是一个响应式对象,因此需要递归的去调用toRaw方法去获取原始对象,直到真正的获取到了原始对象,此时原始对象身上没有'RAW'属性,因此返回这个原始对象
+  return raw ? toRaw(raw) : observed
+}
+
+export const toReactive = <T extends unknown>(value: T): T =>
+  // 判断传入的原始数据是否为对象类型
+  // 如果传入的原始数据是对象类型,那么调用reactive去进行代理,这里reactive内部其实也是进行了相关的优化,如果一个原始值已经是被代理过的,那么会直接返回已经代理的对象,就不用重新去代理了
+  // 如果传入的原始数据不是对象类型,那么直接返回该数据
+  isObject(value) ? reactive(value as object) : value
