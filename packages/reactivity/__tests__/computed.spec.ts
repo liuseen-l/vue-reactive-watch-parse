@@ -22,7 +22,7 @@ describe('computed', () => {
    * 这里首先需要考虑到触发run的不同方式
    *  1. 在创建effect的时候可以触发run
    *  2. trigger触发更新的时候会触发run
-   *  3. computed中的调度器scheduler会触发run
+   *  3. computed中的调度器scheduler会触发run（问题所在，这里传入的dep是Set集合）
    *  4. computed中get value中会触发run
    *  
    *  然后后分析set死循环的场景：

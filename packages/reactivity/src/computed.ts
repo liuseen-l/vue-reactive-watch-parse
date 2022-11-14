@@ -1,8 +1,7 @@
 import { isFunction, NOOP } from "@vue/shared"
 import { Dep } from './dep'
-import { isTracking, ReactiveEffect, trackEffects, trigger, triggerEffects } from './effect'
+import { isTracking, ReactiveEffect, trackEffects, triggerEffects } from './effect'
 import { ReactiveFlags, toRaw } from "./reactive"
-
 
 /**
  * state.age 收集computed的副作用函数
@@ -36,6 +35,7 @@ export class ComputedRefImpl<T> {
   public readonly __v_isRef = true
   public _dirty = true  // 默认脏的
   public readonly [ReactiveFlags.IS_READONLY]: boolean = false
+
   constructor(
     getter: ComputedGetter<T>,
     private readonly _setter: ComputedSetter<T>,

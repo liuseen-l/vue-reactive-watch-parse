@@ -71,7 +71,6 @@ class RefImpl<T> {
   }
 }
 
-
 export function shallowRef<T extends object>(
   value: T
 ): T extends Ref ? T : ShallowRef<T>
@@ -80,7 +79,6 @@ export function shallowRef<T = any>(): ShallowRef<T | undefined>
 export function shallowRef(value?: unknown) {
   return createRef(value, true)
 }
-
 
 declare const RefSymbol: unique symbol
 export interface Ref<T = any> {

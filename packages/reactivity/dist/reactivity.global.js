@@ -3,11 +3,32 @@ var VueReactivity = (function (exports) {
 
   // 判断传入的数据是否为对象类型
   const isObject = (val) => val !== null && typeof val === 'object';
+  
   // 判断是否是一个函数
   const isFunction = (val) => typeof val === 'function';
+  
   // computed要用
   const NOOP = () => { };
+  
+  // 判断数组
   const isArray = Array.isArray;
+  
+  // 判断Map
+  const isMap = (val) => toTypeString(val) === '[object Map]';
+  const objectToString = Object.prototype.toString;
+  const toTypeString = (value) => objectToString.call(value);
+  const extend = Object.assign;
+
+  // 判断当前访问的key是否是target自身的属性
+  const hasOwnProperty = Object.prototype.hasOwnProperty;
+  const hasOwn = (val, key) => hasOwnProperty.call(val, key); // 相当于obj.hasOwnProperty(key)
+  const isString = (val) => typeof val === 'string';
+  
+  // 判断是否是一个number类型的key
+  const isIntegerKey = (key) => isString(key) && key !== 'NaN' && key[0] !== '-' && '' + parseInt(key, 10) === key;
+  
+  // 判断值是否发生变化 Object.is 比 == 甚至 === 更严格，== 会类型转换，0 -0 ===会相等，而 Object.is 返回false
+  const hasChanged = (value, oldValue) => !Object.is(value, oldValue);
 
   /**
    * effect1(()=>{
@@ -25,6 +46,8 @@ var VueReactivity = (function (exports) {
    */
   let effectStack = [];
   let activeEffect;
+  const ITERATE_KEY = Symbol('iterate');
+  const MAP_KEY_ITERATE_KEY = Symbol('Map key iterate');
   function cleanupEffect(effect) {
       // deps 是当前副作用函数身上的一个属性，这个属性中存储了那些object.key收集了当前effect所对应的set集合
       const { deps } = effect; // deps -> [set,set]
@@ -37,12 +60,14 @@ var VueReactivity = (function (exports) {
       }
   }
   class ReactiveEffect {
+      fn;
+      scheduler;
+      active = true;
+      deps = []; // 让 effect 记录他依赖了哪些属性，同时要记录当前属性依赖了哪个effect 
+      parent = undefined;
       constructor(fn, scheduler = null, scope) {
           this.fn = fn;
           this.scheduler = scheduler;
-          this.active = true;
-          this.deps = []; // 让 effect 记录他依赖了哪些属性，同时要记录当前属性依赖了哪个effect 
-          this.parent = undefined;
       }
       run() {
           // 如果不是激活状态
@@ -58,7 +83,7 @@ var VueReactivity = (function (exports) {
           if (!effectStack.includes(this)) { // 屏蔽同一个effect会多次执行 
               try {
                   // 激活状态的话，需要建立属性和依赖的关系
-                  cleanupEffect(this); // 清空分支d切换时遗留的副作用函数
+                  cleanupEffect(this); // 清空分支切换时遗留的副作用函数
                   activeEffect = this;
                   effectStack.push(activeEffect);
                   return this.fn(); // 访问data的属性，触发getter （依赖收集）
@@ -83,7 +108,7 @@ var VueReactivity = (function (exports) {
       return activeEffect !== undefined;
   }
   // 追踪 一个属性对应多个effect 多个属性对应一个effect
-  function track(target, key) {
+  function track(target, key, type) {
       // 判断这个 state.name 访问属性的操作是不是在 effect 中执行的，简单来说就是判断需不需要收集
       if (!isTracking()) { //如果这个属性不依赖于 effect 直接跳出
           return;
@@ -109,24 +134,66 @@ var VueReactivity = (function (exports) {
   function trackEffects(dep) {
       // 判断当前的副作用函数是否已经被收集过，收集过就不用再收集了，虽然set可以过滤重复的，但还是有效率问题
       let shouldTrack = !dep.has(activeEffect);
+      // 如果是内层的effect 我们可以将之前的先清空掉
+      // if (effectStack.length === 1) {
+      //   dep.clear()
+      // }
       if (shouldTrack) {
           dep.add(activeEffect);
           activeEffect.deps.push(dep); // 副作用函数保存自己被哪些 target.key 所收集
       }
   }
-  function trigger(target, key) {
+  function trigger(target, key, type) {
       // 设置新的值以后，取出当前target所对应的大桶
       const depsMap = targetMap.get(target);
       // 如果没有大桶直接返回,表明属性没有依赖任何的effect
       if (!depsMap)
           return;
       let deps = []; // [set,set]
-      if (key !== void 0) {
+      // 执行 target key 的副作用函数
+      if (key !== void 0) { // 这里有个问题,就是当前trigger是由于增添属性触发的时候,这里 target key 会获取到undefined
           deps.push(depsMap.get(key));
+      }
+      switch (type) {
+          // 只有当操作类型为 'ADD' 时，才触发 target 身上 key == ITERATE_KEY 相关联的副作用函数重新执行
+          case "add" /* TriggerOpTypes.ADD */:
+              // 这里会进行不同的判断,因为保存增添操作所对应的副作用函数的标识符会根据数据类型不同而变化
+              if (!isArray(target)) { // 如果增添属性的对象是普对对象,取出for in的副作用函数
+                  deps.push(depsMap.get(ITERATE_KEY));
+                  if (isMap(target)) { // // 如果增添属性的对象是Map对象,取出Map所对应的for in副作用函数
+                      deps.push(depsMap.get(MAP_KEY_ITERATE_KEY));
+                  }
+              }
+              /**
+               *  这里为什么还需要 isIntergerKey 去判断 key 是否为符合数组的索引类型?
+               *    因为 TriggerOpTypes.ADD 只是确认了当前的属性为新增属性,当走到 else if (isIntegerKey(key)) 的时候
+               *    只能说明 target 是数组类型,但是不能确保key是不是符合数组的索引属性,因此需要判断一下
+               *  */
+              else if (isIntegerKey(key)) {
+                  deps.push(depsMap.get('length'));
+              }
+              break;
+          // 只有当操作类型为 'DELETE' 时，才触发 target 身上 key == ITERATE_KEY 相关联的副作用函数重新执行
+          case "delete" /* TriggerOpTypes.DELETE */:
+              if (!isArray(target)) {
+                  deps.push(depsMap.get(ITERATE_KEY));
+                  if (isMap(target)) {
+                      deps.push(depsMap.get(MAP_KEY_ITERATE_KEY));
+                  }
+              }
+              break;
+          case "set" /* TriggerOpTypes.SET */:
+              if (isMap(target)) {
+                  deps.push(depsMap.get(ITERATE_KEY));
+              }
+              break;
       }
       const effects = [];
       for (const dep of deps) { // dep -> set
-          effects.push(...dep);
+          // 防止当前trigger是由于增添属性触发的时候,上面 deps.push(depsMap.get(key)) 会添加 undefined 到deps里面
+          if (dep) {
+              effects.push(...dep);
+          }
       }
       triggerEffects(effects);
   }
@@ -145,7 +212,13 @@ var VueReactivity = (function (exports) {
   }
   function effect(fn, options) {
       const _effect = new ReactiveEffect(fn); // 这里导致嵌套函数有问题
-      _effect.run(); // 默认让fn执行一次
+      //合并
+      if (options) {
+          extend(_effect, options);
+      }
+      if (!options || !options.lazy) {
+          _effect.run(); // 默认让fn执行一次
+      }
       const runner = _effect.run.bind(_effect);
       runner.effect = _effect; // 给runner添加一个effect属性就是_effect实例
       // runner 可以强制重新执行effect
@@ -168,17 +241,65 @@ var VueReactivity = (function (exports) {
   }
   function createSetter(shallow = false) {
       return function set(target, key, value, receiver) {
-          // 需要先设置值，再去追踪，重新执行副作用函数
+          // 拿到旧值,便于触发更新前的比较
+          let oldValue = target[key];
+          /**
+           *  # hadKey 这一步用来判断当前访问的key,是否是target自身的属性，如果是的话表示当前的set操作是修改数据，反之则是增添属性的操作
+           *
+           *  # hadKey 这一步其实有2个作用
+           *    1.针对数组，判断原始数组是否有这个key
+           *        如果当前的原始对象是数组类型，并且key是数字类型，或者字符串的数字类型( 0 or '0')，执行 Number(key) < target.length 判单数组有没有这个key
+           *    2.针对对象，判断原始对象是否有这个key
+           *        如果当前的原始对象是对象类型，执行 hasOwn(target, key) ，判断自身是否含有key（不包括原型链上的属性）
+           */
+          const hadKey = isArray(target) && isIntegerKey(key) ? Number(key) < target.length : hasOwn(target, key);
+          // 需要先设置值，再去追踪，重新执行副作用函数，否者执行副作用函数的时候值没有发生变化
           const res = Reflect.set(target, key, value, receiver);
-          trigger(target, key);
+          // 这里判断当前代理对象的原始对象是否为target,防止原型链setter触发导致重复触发trigger
+          if (target === toRaw(receiver)) {
+              // 如果没有访问的key，无论是对于数组还是对象，都是新增属性
+              if (!hadKey) {
+                  trigger(target, key, "add" /* TriggerOpTypes.ADD */);
+              }
+              else if (hasChanged(value, oldValue)) { // 如果我们修改的属性值和原来的值一样，没必要去更新，影响性能
+                  trigger(target, key, "set" /* TriggerOpTypes.SET */);
+              }
+          }
           return res;
       };
+  }
+  // 'foo' in p 
+  function has(target, key) {
+      const result = Reflect.has(target, key);
+      track(target, key);
+      return result;
+  }
+  // for in 
+  function ownKeys(target) {
+      // 判断当前遍历的对象是object类型还是数组类型
+      const key = isArray(target) ? 'length' : ITERATE_KEY;
+      track(target, key);
+      return Reflect.ownKeys(target);
+  }
+  // 删除属性的时候触发
+  function deleteProperty(target, key) {
+      // 判断要删除的属性是否存在当前的target身上
+      const hadKey = hasOwn(target, key);
+      const result = Reflect.deleteProperty(target, key);
+      // 当前 target 存在要删除的属性,并且成功删除了
+      if (result && hadKey) {
+          trigger(target, key, "delete" /* TriggerOpTypes.DELETE */);
+      }
+      return result;
   }
   const get = createGetter();
   const set = createSetter();
   const mutableHandlers = {
       get,
-      set
+      set,
+      has,
+      ownKeys,
+      deleteProperty
   };
 
   const reactiveMap = new WeakMap(); // 缓存代理过的target
@@ -210,7 +331,7 @@ var VueReactivity = (function (exports) {
   function toRaw(observed) {
       // 如果传入的对象是一个响应式对象,例如reactive代理的响应式对象,可以访问该代理对象的'__v_raw'属性,这个属性会返回代理对象的原始对象
       const raw = observed && observed["__v_raw" /* ReactiveFlags.RAW */];
-      // 如果这里获取到了原始对象,但是这个原始对象还可能是一个响应式对象,因此需要递归的去调用toRaw方法去获取原始对象,直到真正的获取到了原始对象,此时原始对象身上没有'RAW'属性,因此返回这个原始对象
+      // 如果这里获取到了原始对象,但是这个原始对象还可能是一个响应式对象,因此需要递归的去调用toRaw方法去获取原始对象,直到真正的获取到了原始对象
       return raw ? toRaw(raw) : observed;
   }
   const toReactive = (value) => 
@@ -219,14 +340,16 @@ var VueReactivity = (function (exports) {
   // 如果传入的原始数据不是对象类型,那么直接返回该数据
   isObject(value) ? reactive(value) : value;
 
-  var _a;
   class ComputedRefImpl {
+      _setter;
+      dep = undefined;
+      _value;
+      effect; // 计算属性依赖于effect
+      __v_isRef = true;
+      _dirty = true; // 默认脏的
+      ["__v_isReadonly" /* ReactiveFlags.IS_READONLY */] = false;
       constructor(getter, _setter, isReadonly) {
           this._setter = _setter;
-          this.dep = undefined;
-          this.__v_isRef = true;
-          this._dirty = true; // 默认脏的
-          this[_a] = false;
           // 这里将计算属性包成一个effect , getter相当于effect当中的副作用函数
           this.effect = new ReactiveEffect(getter, () => {
               // 稍后计算属性的值发生变化了,不要重新执行getter,而是走第二个函数
@@ -254,7 +377,6 @@ var VueReactivity = (function (exports) {
           this._setter(newValue); // 如果修改计算属性的值就走setter
       }
   }
-  _a = "__v_isReadonly" /* ReactiveFlags.IS_READONLY */;
   function computed(getterOrOptions) {
       // 判断传入的值是函数还是配置对象{get,set}
       const onlyGetter = isFunction(getterOrOptions);
@@ -287,12 +409,15 @@ var VueReactivity = (function (exports) {
   }
   // ref
   class RefImpl {
+      __v_isShallow;
+      _value;
+      _rawValue;
+      dep = undefined;
+      // 判断当前的实例是否为Ref对象
+      __v_isRef = true;
       // 这里ref 的 __v_isShallow 为false，用于判断是不是浅层次的响应式,即判断调用的函数时shallowRef 还是 ref
       constructor(value, __v_isShallow) {
           this.__v_isShallow = __v_isShallow;
-          this.dep = undefined;
-          // 判断当前的实例是否为Ref对象
-          this.__v_isRef = true;
           // 这里传入的值可能是一个reactive代理的响应式对象，因此通过toRaw方法，返回reactive代理的原始对象
           this._rawValue = __v_isShallow ? value : toRaw(value); // 访问value['__v_raw]获取到原始对象并进行保存
           // 对原始数据进行代理

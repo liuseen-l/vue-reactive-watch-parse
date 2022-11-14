@@ -1,7 +1,7 @@
-import { TrackOpTypes } from './operations'
+import { TrackOpTypes, TriggerOpTypes } from './operations'
 import { Target } from './reactive'
 import { Dep } from './dep'
-import { isArray } from '@vue/shared'
+import { isArray, extend, isMap, isIntegerKey } from '@vue/shared'
 /**
  * effect1(()=>{
  *    state.name
@@ -19,6 +19,9 @@ import { isArray } from '@vue/shared'
 let effectStack: ReactiveEffect[] = []
 export let activeEffect: ReactiveEffect | undefined
 
+
+export const ITERATE_KEY = Symbol('iterate')
+export const MAP_KEY_ITERATE_KEY = Symbol('Map key iterate')
 
 function cleanupEffect(effect: ReactiveEffect) {
   // deps 是当前副作用函数身上的一个属性，这个属性中存储了那些object.key收集了当前effect所对应的set集合
@@ -60,7 +63,7 @@ export class ReactiveEffect<T = any> {
     if (!effectStack.includes(this)) { // 屏蔽同一个effect会多次执行 
       try {
         // 激活状态的话，需要建立属性和依赖的关系
-        cleanupEffect(this) // 清空分支d切换时遗留的副作用函数
+        cleanupEffect(this) // 清空分支切换时遗留的副作用函数
         activeEffect = this;
         effectStack.push(activeEffect)
         return this.fn(); // 访问data的属性，触发getter （依赖收集）
@@ -70,7 +73,7 @@ export class ReactiveEffect<T = any> {
       }
     }
   }
-  
+
   // 清除依赖关系，可以手动调用stop执行
   stop() {
     if (this.active) // 如果effect是激活的采取将deps上的effect移除
@@ -88,7 +91,7 @@ export function isTracking() {
 }
 
 // 追踪 一个属性对应多个effect 多个属性对应一个effect
-export function track(target: object, key: unknown) {
+export function track(target: object, key: unknown, type?: TrackOpTypes) {
   // 判断这个 state.name 访问属性的操作是不是在 effect 中执行的，简单来说就是判断需不需要收集
   if (!isTracking()) { //如果这个属性不依赖于 effect 直接跳出
     return
@@ -119,13 +122,19 @@ export function track(target: object, key: unknown) {
 export function trackEffects(dep: Dep) {
   // 判断当前的副作用函数是否已经被收集过，收集过就不用再收集了，虽然set可以过滤重复的，但还是有效率问题
   let shouldTrack = !dep.has(activeEffect)
+
+  // 如果是内层的effect 我们可以将之前的先清空掉
+  // if (effectStack.length === 1) {
+  //   dep.clear()
+  // }
+
   if (shouldTrack) {
     dep.add(activeEffect)
     activeEffect.deps.push(dep) // 副作用函数保存自己被哪些 target.key 所收集
   }
 }
 
-export function trigger(target: Target, key: string | number | symbol) {
+export function trigger(target: Target, key: string | number | symbol, type?: TriggerOpTypes) {
   // 设置新的值以后，取出当前target所对应的大桶
   const depsMap = targetMap.get(target)
 
@@ -134,13 +143,52 @@ export function trigger(target: Target, key: string | number | symbol) {
     return;
 
   let deps: (Dep | undefined)[] = [] // [set,set]
-  if (key !== void 0) {
+  // 执行 target key 的副作用函数
+  if (key !== void 0) { // 这里有个问题,就是当前trigger是由于增添属性触发的时候,这里 target key 会获取到undefined
     deps.push(depsMap.get(key))
   }
 
+  switch (type) {
+    // 只有当操作类型为 'ADD' 时，才触发 target 身上 key == ITERATE_KEY 相关联的副作用函数重新执行
+    case TriggerOpTypes.ADD:
+      // 这里会进行不同的判断,因为保存增添操作所对应的副作用函数的标识符会根据数据类型不同而变化
+      if (!isArray(target)) { // 如果增添属性的对象是普对对象,取出for in的副作用函数
+        deps.push(depsMap.get(ITERATE_KEY))
+        if (isMap(target)) { // // 如果增添属性的对象是Map对象,取出Map所对应的for in副作用函数
+          deps.push(depsMap.get(MAP_KEY_ITERATE_KEY))
+        }
+      } 
+      /**
+       *  这里为什么还需要 isIntergerKey 去判断 key 是否为符合数组的索引类型?
+       *    因为 TriggerOpTypes.ADD 只是确认了当前的属性为新增属性,当走到 else if (isIntegerKey(key)) 的时候
+       *    只能说明 target 是数组类型,但是不能确保key是不是符合数组的索引属性,因此需要判断一下
+       *  */
+      else if (isIntegerKey(key)) { 
+        deps.push(depsMap.get('length'))
+      }
+      break
+    // 只有当操作类型为 'DELETE' 时，才触发 target 身上 key == ITERATE_KEY 相关联的副作用函数重新执行
+    case TriggerOpTypes.DELETE:
+      if (!isArray(target)) {
+        deps.push(depsMap.get(ITERATE_KEY))
+        if (isMap(target)) {
+          deps.push(depsMap.get(MAP_KEY_ITERATE_KEY))
+        }
+      }
+      break
+    case TriggerOpTypes.SET:
+      if (isMap(target)) {
+        deps.push(depsMap.get(ITERATE_KEY))
+      }
+      break
+  }
+  
   const effects: ReactiveEffect[] = []
   for (const dep of deps) { // dep -> set
-    effects.push(...dep)
+    // 防止当前trigger是由于增添属性触发的时候,上面 deps.push(depsMap.get(key)) 会添加 undefined 到deps里面
+    if(dep){ 
+      effects.push(...dep)
+    }
   }
 
   triggerEffects(effects)
@@ -160,11 +208,18 @@ export function triggerEffects(dep: Dep | ReactiveEffect[]) {
   }
 }
 
-export function effect<T = any>(fn: () => T, options?) {
+export function effect<T = any>(fn: () => T, options?: any) {
 
   const _effect = new ReactiveEffect(fn) // 这里导致嵌套函数有问题
 
-  _effect.run() // 默认让fn执行一次
+  //合并
+  if (options) {
+    extend(_effect, options)
+  }
+
+  if (!options || !options.lazy) {
+    _effect.run() // 默认让fn执行一次
+  }
 
   const runner = _effect.run.bind(_effect)
   runner.effect = _effect // 给runner添加一个effect属性就是_effect实例

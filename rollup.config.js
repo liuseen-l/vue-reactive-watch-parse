@@ -2,8 +2,16 @@ import path from 'path';
 import ts from 'rollup-plugin-typescript2';
 import json from '@rollup/plugin-json';
 import { nodeResolve } from '@rollup/plugin-node-resolve'
-import commonjs from '@rollup/plugin-commonjs'
-
+import commonjs from '@rollup/plugin-commonjs' 
+/**
+ * 
+ * rollup.js编译源码中的模块引用默认只支持 ES6+的模块方式import/export。然而大量的npm模块是基于CommonJS模块方式，
+ * 这就导致了大量 npm 模块不能直接编译使用。所以辅助rollup.js编译支持 npm模块和CommonJS模块方式的插件就应运而生。
+ * 
+ * rollup-plugin-node-resolve 插件允许我们加载第三方模块 配合monorope
+ * @rollup/plugin-commons 插件将它们转换为ES6版本
+ * 
+ */
 
 const packageFormats = process.env.FORMATS && process.env.FORMATS.split(',') // formates 有可能是一个数组
 const sourcemap = process.env.SOURCE_MAP; // process.env 这些参数就是execa 传递的参数
