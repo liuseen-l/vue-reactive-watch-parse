@@ -226,7 +226,13 @@ var VueReactivity = (function (exports) {
       return function get(target, key, receiver) {
           // 如果target已经被代理过了就直接返回true
           if (key === "__v_isReactive" /* ReactiveFlags.IS_REACTIVE */) {
-              return true;
+              return !isReadonly;
+          }
+          else if (key === "__v_isReadonly" /* ReactiveFlags.IS_READONLY */) {
+              return isReadonly;
+          }
+          else if (key === "__v_isShallow" /* ReactiveFlags.IS_SHALLOW */) {
+              return shallow;
           }
           else if (key === "__v_raw" /* ReactiveFlags.RAW */) {
               // 用于获取 receiver 的原始对象
@@ -346,13 +352,17 @@ var VueReactivity = (function (exports) {
           return target;
       }
       // 判断target是否被代理过，如果target是一个响应式对象，这里会触发getter(主要针对于target是一个响应式对象，如果target是原始对象不会触发getter，只有响应式对象才会触发getter)
-      if (target["__v_isReactive" /* ReactiveFlags.IS_REACTIVE */]) {
+      // && 后面的 判断用于 readonly(reactive(obj)) 这样的情况
+      if (target["__v_raw" /* ReactiveFlags.RAW */] && !(isReadonly && target["__v_isReactive" /* ReactiveFlags.IS_REACTIVE */])) {
+          // console.log(isReadonly);
+          // console.log(target[ReactiveFlags.IS_REACTIVE]);
           return target;
       }
       // 优先通过原始对象 obj 寻找之前创建的代理对象，如果找到了，直接返回已有的代理对象，简单的说就是代理过的对象不再重复代理，取出之前创建的代理对象返回
       const existionProxy = reactiveMap.get(target);
-      if (existionProxy)
+      if (existionProxy) {
           return existionProxy;
+      }
       const proxy = new Proxy(target, baseHandlers); // 数据劫持
       reactiveMap.set(target, proxy); // 缓存
       return proxy; // 返回代理

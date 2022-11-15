@@ -8,7 +8,11 @@ function createGetter(isReadonly = false, shallow = false) {
   return function get(target: Target, key: string | symbol, receiver: object) { // 代理对象的本身
     // 如果target已经被代理过了就直接返回true
     if (key === ReactiveFlags.IS_REACTIVE) {
-      return true
+      return !isReadonly
+    } else if (key === ReactiveFlags.IS_READONLY) {
+      return isReadonly
+    } else if (key === ReactiveFlags.IS_SHALLOW) {
+      return shallow
     } else if (key === ReactiveFlags.RAW) {
       // 用于获取 receiver 的原始对象
       return target

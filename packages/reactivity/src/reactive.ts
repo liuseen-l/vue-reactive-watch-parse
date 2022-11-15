@@ -18,14 +18,19 @@ export function createReactiveObject(target: Target, isReadonly: boolean, baseHa
   }
 
   // 判断target是否被代理过，如果target是一个响应式对象，这里会触发getter(主要针对于target是一个响应式对象，如果target是原始对象不会触发getter，只有响应式对象才会触发getter)
-  if (target[ReactiveFlags.IS_REACTIVE]) {
+  // && 后面的 判断用于 readonly(reactive(obj)) 这样的情况
+  if (target[ReactiveFlags.RAW] && !(isReadonly && target[ReactiveFlags.IS_REACTIVE])) {
+    // console.log(isReadonly);
+    // console.log(target[ReactiveFlags.IS_REACTIVE]);
     return target
   }
 
   // 优先通过原始对象 obj 寻找之前创建的代理对象，如果找到了，直接返回已有的代理对象，简单的说就是代理过的对象不再重复代理，取出之前创建的代理对象返回
   const existionProxy = reactiveMap.get(target)
-  if (existionProxy)
+
+  if (existionProxy) {
     return existionProxy
+  }
 
   const proxy = new Proxy(target, baseHandlers) // 数据劫持
 
@@ -39,19 +44,23 @@ export function shallowReactive<T extends object>(target: T): ShallowReactive<T>
   return createReactiveObject(
     target,
     false,
-    shallowReactiveHandlers,
+    shallowReactiveHandlers
   )
 }
 
 export function reactive(target: object) {
-  return createReactiveObject(target, false, mutableHandlers)
+  return createReactiveObject(
+    target,
+    false,
+    mutableHandlers
+  )
 }
 
 export function readonly<T extends object>(target: T) {
   return createReactiveObject(
     target,
     true,
-    readonlyHandlers,
+    readonlyHandlers
   )
 }
 
@@ -59,12 +68,6 @@ export function readonly<T extends object>(target: T) {
 export function shallowReadOnly(target: object) {
 
 }
-
-
-
-
-
-
 
 
 

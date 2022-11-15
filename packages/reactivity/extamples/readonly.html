@@ -9,13 +9,18 @@
   <body>
     <script src="../dist/reactivity.global.js"></script>
     <script>
-      const { effect, readonly } = VueReactivity;
+      const { effect, readonly, reactive } = VueReactivity;
       const original = { foo: { bar: 1 } };
-      const state = readonly(original);
+      const obj = reactive(original);
+      const state = readonly(obj);
       effect(() => {
+        // state.foo 是通过 Reflect.get(target,key,receiv er)拿不到的，此时的target是 obj,相当于obj.foo，返回的时候由于foo对应的值是一个对象，reactive返回的时候会进行包装
+        // 因此返回的state.foo 首先是 reactive({bar:1}),由于最外层是readonly，最后返回的就是 readonly(reactive({bar:1}))
+        // 总体下来就是 obj.foo 以及 reactive({bar:1}).bar，和effect建立了依赖关系，因此直接修改obj的属性，都会触发依赖更新
         console.log(state.foo.bar);
       });
-      state.foo.bar = 2;
+      
+      state.foo.bar = 3;
     </script>
   </body>
 </html>
