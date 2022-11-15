@@ -1,5 +1,5 @@
 import { test, expect, describe, it } from 'vitest'
-import { reactive } from "../src/reactive";
+import { reactive, shallowReactive } from "../src/reactive";
 import { effect } from "../src/effect"
 
 
@@ -173,10 +173,46 @@ describe('reactive', () => {
     let count = 0
     effect(() => {
       count++
-      console.log(child.bar) 
+      child.bar
     })
     // 修改 child.bar 的值
     child.bar = 2 // 会导致副作用函数重新执行两次
     expect(count).toBe(2)
+  })
+
+  // 深层次响应式
+  test('深层响应式', () => {
+    const original = { bar: { foo: 1 } }
+    const state = reactive(original)
+    let count = 0
+    effect(() => {
+      state.bar.foo;
+      count++
+    })
+    state.bar.foo = 2
+    expect(count).toBe(2)
+  })
+
+  /**
+   * # 浅层次响应式
+   * const obj = shallowReactive({ foo: { bar: 1 } })
+   * effect(() => {
+   *    console.log(obj.foo.bar)
+   * })
+   * obj.foo 是响应的，可以触发副作用函数重新执行
+   *    obj.foo = { bar: 2 } 
+   * obj.foo.bar 不是响应的，不能触发副作用函数重新执行
+   *    obj.foo.bar = 3
+   * 
+   *  */
+  test('浅层次响应式', () => {
+    const obj = shallowReactive({ foo: { bar: 1 } })
+    let count = 0
+    effect(() => {
+      obj.foo.bar
+      count++
+    })
+    obj.foo.bar++
+    expect(count).toBe(1)
   })
 })

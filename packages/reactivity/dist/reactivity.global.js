@@ -3,30 +3,23 @@ var VueReactivity = (function (exports) {
 
   // 判断传入的数据是否为对象类型
   const isObject = (val) => val !== null && typeof val === 'object';
-  
   // 判断是否是一个函数
   const isFunction = (val) => typeof val === 'function';
-  
   // computed要用
   const NOOP = () => { };
-  
   // 判断数组
   const isArray = Array.isArray;
-  
   // 判断Map
   const isMap = (val) => toTypeString(val) === '[object Map]';
   const objectToString = Object.prototype.toString;
   const toTypeString = (value) => objectToString.call(value);
   const extend = Object.assign;
-
   // 判断当前访问的key是否是target自身的属性
   const hasOwnProperty = Object.prototype.hasOwnProperty;
   const hasOwn = (val, key) => hasOwnProperty.call(val, key); // 相当于obj.hasOwnProperty(key)
   const isString = (val) => typeof val === 'string';
-  
   // 判断是否是一个number类型的key
   const isIntegerKey = (key) => isString(key) && key !== 'NaN' && key[0] !== '-' && '' + parseInt(key, 10) === key;
-  
   // 判断值是否发生变化 Object.is 比 == 甚至 === 更严格，== 会类型转换，0 -0 ===会相等，而 Object.is 返回false
   const hasChanged = (value, oldValue) => !Object.is(value, oldValue);
 
@@ -225,6 +218,10 @@ var VueReactivity = (function (exports) {
       return runner;
   }
 
+  function warn(msg, ...args) {
+      console.warn(`[Vue warn] ${msg}`, ...args);
+  }
+
   function createGetter(isReadonly = false, shallow = false) {
       return function get(target, key, receiver) {
           // 如果target已经被代理过了就直接返回true
@@ -232,11 +229,23 @@ var VueReactivity = (function (exports) {
               return true;
           }
           else if (key === "__v_raw" /* ReactiveFlags.RAW */) {
+              // 用于获取 receiver 的原始对象
               return target;
           }
-          // 触发getter收集副作用函数effect
-          track(target, key);
-          return Reflect.get(target, key, receiver);
+          const res = Reflect.get(target, key, receiver);
+          // 如果不是只读，触发getter收集副作用函数effect
+          if (!isReadonly) {
+              track(target, key);
+          }
+          // 如果是浅层次的读
+          if (shallow) {
+              return res;
+          }
+          // 如果返回的对象是对象，判断是否为 readonly ,如果是 readonly 那么递归调用readonly，保证深层次的对象也是只读的，reactive 同理，递归包裹深层次对象成为响应式，可以深层次的实现响应式
+          if (isObject(res)) {
+              return isReadonly ? readonly(res) : reactive(res);
+          }
+          return res;
       };
   }
   function createSetter(shallow = false) {
@@ -255,7 +264,7 @@ var VueReactivity = (function (exports) {
           const hadKey = isArray(target) && isIntegerKey(key) ? Number(key) < target.length : hasOwn(target, key);
           // 需要先设置值，再去追踪，重新执行副作用函数，否者执行副作用函数的时候值没有发生变化
           const res = Reflect.set(target, key, value, receiver);
-          // 这里判断当前代理对象的原始对象是否为target,防止原型链setter触发导致重复触发trigger
+          // 这里判断当前代理对象的原始对象是否为target,防止原型链响应式对象触发 setter 导致重复触发 trigger
           if (target === toRaw(receiver)) {
               // 如果没有访问的key，无论是对于数组还是对象，都是新增属性
               if (!hadKey) {
@@ -274,7 +283,7 @@ var VueReactivity = (function (exports) {
       track(target, key);
       return result;
   }
-  // for in 
+  // for key in p 
   function ownKeys(target) {
       // 判断当前遍历的对象是object类型还是数组类型
       const key = isArray(target) ? 'length' : ITERATE_KEY;
@@ -292,6 +301,7 @@ var VueReactivity = (function (exports) {
       }
       return result;
   }
+  // 深层次响应式模块的Handlers
   const get = createGetter();
   const set = createSetter();
   const mutableHandlers = {
@@ -301,10 +311,32 @@ var VueReactivity = (function (exports) {
       ownKeys,
       deleteProperty
   };
+  // 浅层次响应式模块的Handlers
+  const shallowGet = createGetter(false, true);
+  const shallowSet = createSetter(true);
+  const shallowReactiveHandlers = extend({}, mutableHandlers, 
+  // 用 shallowReactiveHandlers 覆盖 mutableHandlers 当中的 get 和 set ，其余继承
+  {
+      get: shallowGet,
+      set: shallowSet
+  });
+  // 只读模块的Handlers
+  const readonlyGet = createGetter(true);
+  const readonlyHandlers = {
+      get: readonlyGet,
+      set(target, key) {
+          warn(`Set operation on key "${String(key)}" failed: target is readonly.`, target);
+          return true;
+      },
+      deleteProperty(target, key) {
+          warn(`Delete operation on key "${String(key)}" failed: target is readonly.`, target);
+          return true;
+      }
+  };
 
   const reactiveMap = new WeakMap(); // 缓存代理过的target
   // 工厂函数
-  function createReactiveObject(target) {
+  function createReactiveObject(target, isReadonly, baseHandlers) {
       // 判断传入的数据是否为对象
       if (!isObject(target)) {
           // __DEV__用于判断当前的代码编写环境为开发环境的时候，发出警告，因此在生产环境下这段代码为dead code，利用tree-shaking(依赖于ES Module)移除掉
@@ -321,12 +353,18 @@ var VueReactivity = (function (exports) {
       const existionProxy = reactiveMap.get(target);
       if (existionProxy)
           return existionProxy;
-      const proxy = new Proxy(target, mutableHandlers); // 数据劫持
+      const proxy = new Proxy(target, baseHandlers); // 数据劫持
       reactiveMap.set(target, proxy); // 缓存
       return proxy; // 返回代理
   }
+  function shallowReactive(target) {
+      return createReactiveObject(target, false, shallowReactiveHandlers);
+  }
   function reactive(target) {
-      return createReactiveObject(target);
+      return createReactiveObject(target, false, mutableHandlers);
+  }
+  function readonly(target) {
+      return createReactiveObject(target, true, readonlyHandlers);
   }
   function toRaw(observed) {
       // 如果传入的对象是一个响应式对象,例如reactive代理的响应式对象,可以访问该代理对象的'__v_raw'属性,这个属性会返回代理对象的原始对象
@@ -459,7 +497,9 @@ var VueReactivity = (function (exports) {
   exports.computed = computed;
   exports.effect = effect;
   exports.reactive = reactive;
+  exports.readonly = readonly;
   exports.ref = ref;
+  exports.shallowReactive = shallowReactive;
   exports.targetMap = targetMap;
 
   Object.defineProperty(exports, '__esModule', { value: true });

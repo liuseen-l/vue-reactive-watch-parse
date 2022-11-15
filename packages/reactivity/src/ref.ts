@@ -63,7 +63,7 @@ class RefImpl<T> {
   // 在这里，无论是ref还是shallowRef的实例对象，都是同样的方式进行存储
   set value(newVal) {
     // 设置值的时候触发更新
-    if (newVal !== this._rawValue) {
+    if (newVal !== this._rawValue) {0
       this._rawValue = newVal
       this._value = toReactive(newVal)
       trackEffects(this.dep)
@@ -71,9 +71,7 @@ class RefImpl<T> {
   }
 }
 
-export function shallowRef<T extends object>(
-  value: T
-): T extends Ref ? T : ShallowRef<T>
+export function shallowRef<T extends object>(value: T): T extends Ref ? T : ShallowRef<T>
 export function shallowRef<T>(value: T): ShallowRef<T>
 export function shallowRef<T = any>(): ShallowRef<T | undefined>
 export function shallowRef(value?: unknown) {

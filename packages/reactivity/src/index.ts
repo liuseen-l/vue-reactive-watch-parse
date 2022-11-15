@@ -1,4 +1,4 @@
 export { effect, targetMap } from './effect'
-export { reactive } from './reactive'
+export { reactive, shallowReactive, readonly } from './reactive'
 export { computed } from './computed'
 export { ref } from './ref'

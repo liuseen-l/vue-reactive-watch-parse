@@ -1,12 +1,12 @@
 import { isObject } from '@vue/shared'
 
-import { mutableHandlers } from './baseHandlers'
+import { mutableHandlers, readonlyHandlers, shallowReactiveHandlers } from './baseHandlers'
 
 
 const reactiveMap = new WeakMap<Target, any>(); // 缓存代理过的target
 
 // 工厂函数
-export function createReactiveObject(target: Target) {
+export function createReactiveObject(target: Target, isReadonly: boolean, baseHandlers: ProxyHandler<any>,) {
 
   // 判断传入的数据是否为对象
   if (!isObject(target)) {
@@ -27,23 +27,34 @@ export function createReactiveObject(target: Target) {
   if (existionProxy)
     return existionProxy
 
-  const proxy = new Proxy(target, mutableHandlers) // 数据劫持
+  const proxy = new Proxy(target, baseHandlers) // 数据劫持
 
   reactiveMap.set(target, proxy) // 缓存
   return proxy // 返回代理
 }
 
+export declare const ShallowReactiveMarker: unique symbol
+export type ShallowReactive<T> = T & { [ShallowReactiveMarker]?: true }
+export function shallowReactive<T extends object>(target: T): ShallowReactive<T> {
+  return createReactiveObject(
+    target,
+    false,
+    shallowReactiveHandlers,
+  )
+}
+
 export function reactive(target: object) {
-  return createReactiveObject(target)
+  return createReactiveObject(target, false, mutableHandlers)
 }
 
-export function readonly(target: object) {
-
+export function readonly<T extends object>(target: T) {
+  return createReactiveObject(
+    target,
+    true,
+    readonlyHandlers,
+  )
 }
 
-export function shallowReactive(target: object) {
-
-}
 
 export function shallowReadOnly(target: object) {
 
