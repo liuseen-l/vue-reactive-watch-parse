@@ -3,6 +3,14 @@ import { isObject } from '@vue/shared'
 import { mutableHandlers, readonlyHandlers, shallowReactiveHandlers, shallowReadonlyHandlers } from './baseHandlers'
 
 
+/**
+ * 
+ * 这个不仅仅是为了优化，一些场景有奇效，比如 reactive([{}]).includes(arr[0]) 
+ * 由于includes内部会访问arr[0],然后和传入的arr[0]比较的时候，如果不用这个缓存，
+ * 那么将是两个不同的代理对象,虽然这一步可以优化，但是由于 reactive([obj]) arr.includes(obj) 
+ * 会返回false的原因，不得不重写了includes，因此这里的优化在includes重新实现了
+ * 
+ *  */ 
 const reactiveMap = new WeakMap<Target, any>(); // 缓存代理过的target
 
 // 工厂函数
@@ -72,9 +80,6 @@ export function shallowReadonly<T extends object>(target: T): Readonly<T> {
     shallowReadonlyHandlers,
   )
 }
-
-
-
 
 
 export interface Target {

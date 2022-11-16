@@ -44,3 +44,5 @@ export const toNumber = (val: any): any => {
   const n = parseFloat(val)
   return isNaN(n) ? val : n
 }
+
+export const isSymbol = (val: unknown): val is symbol => typeof val === 'symbol'

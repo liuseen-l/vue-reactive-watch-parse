@@ -22,6 +22,19 @@ export let activeEffect: ReactiveEffect | undefined
 export const ITERATE_KEY = Symbol('iterate')
 export const MAP_KEY_ITERATE_KEY = Symbol('Map key iterate')
 
+export let shouldTrack = true
+const trackStack: boolean[] = []
+
+export function pauseTracking() {
+  trackStack.push(shouldTrack)
+  shouldTrack = false
+}
+
+export function resetTracking() {
+  const last = trackStack.pop()
+  shouldTrack = last === undefined ? true : last
+}
+
 function cleanupEffect(effect: ReactiveEffect) {
   // deps 是当前副作用函数身上的一个属性，这个属性中存储了那些object.key收集了当前effect所对应的set集合
   const { deps } = effect // deps -> [set,set]
@@ -93,7 +106,7 @@ export function isTracking() {
 // 追踪 一个属性对应多个effect 多个属性对应一个effect
 export function track(target: object, key: unknown, type?: TrackOpTypes) {
   // 判断这个 state.name 访问属性的操作是不是在 effect 中执行的，简单来说就是判断需不需要收集
-  if (!isTracking()) { //如果这个属性不依赖于 effect 直接跳出
+  if (!isTracking() || !shouldTrack ) { //如果这个属性不依赖于 effect 直接跳出
     return
   }
   // 根据 target 从 '桶' 当中取得depsMap ,他是一个 Map 类型: key -> effetcs
@@ -133,10 +146,7 @@ export function trackEffects(dep: Dep) {
   }
 }
 
-
-
 /**
- * 
  * @param target {Target }     
  * @param key   { string | number | symbol }
  * @param type  { TriggerOpTypes }  触发更新的操作，修改，删除，新增
@@ -152,7 +162,6 @@ export function trigger(target: Target, key?: string | number | symbol, type?: T
     return;
 
   let deps: (Dep | undefined)[] = [] // [set,set]
-
 
   // 如果修改 arr.length，将索引大于等于 newValue(修改length的值) 的副作用函数取出来执行
   if (key === 'length' && isArray(target)) {
@@ -231,6 +240,7 @@ export function triggerEffects(dep: Dep | ReactiveEffect[]) {
   }
 }
 
+// 副作用函数的构造函数
 export function effect<T = any>(fn: () => T, options?: any) {
 
   const _effect = new ReactiveEffect(fn) // 这里导致嵌套函数有问题

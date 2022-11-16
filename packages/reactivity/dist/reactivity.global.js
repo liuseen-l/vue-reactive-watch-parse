@@ -26,6 +26,7 @@ var VueReactivity = (function (exports) {
       const n = parseFloat(val);
       return isNaN(n) ? val : n;
   };
+  const isSymbol = (val) => typeof val === 'symbol';
 
   /**
    * effect1(()=>{
@@ -45,6 +46,16 @@ var VueReactivity = (function (exports) {
   let activeEffect;
   const ITERATE_KEY = Symbol('iterate');
   const MAP_KEY_ITERATE_KEY = Symbol('Map key iterate');
+  let shouldTrack = true;
+  const trackStack = [];
+  function pauseTracking() {
+      trackStack.push(shouldTrack);
+      shouldTrack = false;
+  }
+  function resetTracking() {
+      const last = trackStack.pop();
+      shouldTrack = last === undefined ? true : last;
+  }
   function cleanupEffect(effect) {
       // deps 是当前副作用函数身上的一个属性，这个属性中存储了那些object.key收集了当前effect所对应的set集合
       const { deps } = effect; // deps -> [set,set]
@@ -107,7 +118,7 @@ var VueReactivity = (function (exports) {
   // 追踪 一个属性对应多个effect 多个属性对应一个effect
   function track(target, key, type) {
       // 判断这个 state.name 访问属性的操作是不是在 effect 中执行的，简单来说就是判断需不需要收集
-      if (!isTracking()) { //如果这个属性不依赖于 effect 直接跳出
+      if (!isTracking() || !shouldTrack) { //如果这个属性不依赖于 effect 直接跳出
           return;
       }
       // 根据 target 从 '桶' 当中取得depsMap ,他是一个 Map 类型: key -> effetcs
@@ -140,7 +151,6 @@ var VueReactivity = (function (exports) {
       }
   }
   /**
-   *
    * @param target {Target }
    * @param key   { string | number | symbol }
    * @param type  { TriggerOpTypes }  触发更新的操作，修改，删除，新增
@@ -225,6 +235,7 @@ var VueReactivity = (function (exports) {
           }
       }
   }
+  // 副作用函数的构造函数
   function effect(fn, options) {
       const _effect = new ReactiveEffect(fn); // 这里导致嵌套函数有问题
       //合并
@@ -244,6 +255,74 @@ var VueReactivity = (function (exports) {
       console.warn(`[Vue warn] ${msg}`, ...args);
   }
 
+  /**
+   * Make a map and return a function for checking if a key
+   * is in that map.
+   * IMPORTANT: all calls of this function must be prefixed with
+   * \/\*#\_\_PURE\_\_\*\/
+   * So that rollup can tree-shake them if necessary.
+   */
+  function makeMap(str, expectsLowerCase) {
+      const map = Object.create(null);
+      const list = str.split(',');
+      for (let i = 0; i < list.length; i++) {
+          map[list[i]] = true;
+      }
+      return expectsLowerCase ? val => !!map[val.toLowerCase()] : val => !!map[val];
+  }
+
+  const arrayInstrumentations = createArrayInstrumentations();
+  function createArrayInstrumentations() {
+      const instrumentations = {};
+      ['includes', 'indexOf', 'lastIndexOf'].forEach(key => {
+          instrumentations[key] = function (...args) {
+              // 这里的 this 是数组的代理对象，这里通过 toRaw 拿到代理数组的原始数组
+              const arr = toRaw(this);
+              // 实现 includes 访问每个元素，建立依赖关系，不重写其实还会和length建立依赖关系，主要用于在effect中 reactvie(['bar']).includes('bar') ,然后修改 arr[0]='foo',需要重新执行effect
+              for (let i = 0, l = this.length; i < l; i++) {
+                  track(arr, i + '');
+              }
+              // 现在的 includes 都是拿代理数组的原始数组中的原始元素和传入的参数比较了，之前不重写时，会有一些代理的操作进来，现在更纯粹
+              /**
+               * 将用户传入的args参数，传递给原始数组对象的 ['includes', 'indexOf', 'lastIndexOf'] 方法，去拿到结果,这一步针对于args不是响应式的。如下：
+               * const obj = {};
+               * const arr = reactive([obj]);
+               * expect(arr.includes(obj)).toBe(true)
+               *  */
+              const res = arr[key](...args);
+              if (res === -1 || res === false) {
+                  /**
+                   * 这一步针对于args是响应式的。拿到arr[0]的原始对象如下
+                   * const obj = {};
+                   * const arr = reactive([obj]);
+                   * expect(arr.includes(arr[0])).toBe(true)
+                   */
+                  return arr[key](...args.map(toRaw));
+              }
+              else {
+                  return res;
+              }
+          };
+      });
+      ['push', 'pop', 'shift', 'unshift', 'splice'].forEach(key => {
+          instrumentations[key] = function (...args) {
+              // 屏蔽 length 与当前 effect 的依赖关系
+              pauseTracking();
+              /**
+               * 当前的 this 是原始对象的代理对象，因此先 toRaw 获取原始对象的方法，不然就是无线递归了，因为this[key]又是调当前方法了。
+               * 这样调用push时，为什么要将方法内部的 this 设置为当前的代理对象呢 ？
+               * 因为 push 方法不止访问和设置 length，而且还会触发当前 push 的索引的 setter，比如现在 arr = reactive([obj])只有一个元素，那么
+               * 我们 push 的时候就会实现 arr[1] = xxx 的操作，这是一个ADD操作，我们应该取出length相关联的 effect 并执行，而这一切都需要触发setter才行
+               * 因此需要将 this 调整为原始数组的代理对象，而我们需要的这个 this 在返回重写的 push 方法时就设置好了。如果在这里不用apply调用的话，就是原始数组调用
+               * [obj][1] = xxx ,这不会触发setter，也就不会将 length 相关的effect取出来执行
+               */
+              const res = toRaw(this)[key].apply(this, args);
+              resetTracking();
+              return res;
+          };
+      });
+      return instrumentations;
+  }
   function createGetter(isReadonly = false, shallow = false) {
       return function get(target, key, receiver) {
           // 如果target已经被代理过了就直接返回true
@@ -260,7 +339,22 @@ var VueReactivity = (function (exports) {
               // 用于获取 receiver 的原始对象
               return target;
           }
+          // 判断当前的target是否为数组
+          const targetIsArray = isArray(target);
+          /**
+           * arr.includes 相当于访问 arr 的 includes 属性，因此在这里可以拦截，返回重写的 includes
+           * 首先判断当前的target是否是由 readonly(['foo']) 代理的，如果是 true 这个时候其实走正常逻辑就可以，不需要拦截，因为设置为只读
+           * hasOwn(arrayInstrumentations, key) 判断当前的 key 所对应的数组方法是否在重写序列中
+           *  */
+          if (!isReadonly && targetIsArray && hasOwn(arrayInstrumentations, key)) {
+              // recevier 是数组的代理，这里放回重写的方法，并将方法当中的 this 改为 recevier
+              return Reflect.get(arrayInstrumentations, key, receiver);
+          }
           const res = Reflect.get(target, key, receiver);
+          // 因为for of 数组的时候，会访问Symbol.iterator，为了不让他和effect建立依赖关系，需要进行判断，并直接返回res
+          if (isSymbol(key) ? builtInSymbols.has(key) : isNonTrackableKeys(key)) {
+              return res;
+          }
           // 如果不是只读，触发getter收集副作用函数effect
           if (!isReadonly) {
               track(target, key);
@@ -366,7 +460,25 @@ var VueReactivity = (function (exports) {
   const shallowReadonlyHandlers = extend({}, readonlyHandlers, {
       get: shallowReadonlyGet
   });
+  const isNonTrackableKeys = /*#__PURE__*/ makeMap(`__proto__,__v_isRef,__isVue`);
+  const builtInSymbols = new Set(
+  /*#__PURE__*/
+  Object.getOwnPropertyNames(Symbol)
+      // ios10.x Object.getOwnPropertyNames(Symbol) can enumerate 'arguments' and 'caller'
+      // but accessing them on Symbol leads to TypeError because Symbol is a strict mode
+      // function
+      .filter(key => key !== 'arguments' && key !== 'caller')
+      .map(key => Symbol[key])
+      .filter(isSymbol));
 
+  /**
+   *
+   * 这个不仅仅是为了优化，一些场景有奇效，比如 reactive([{}]).includes(arr[0])
+   * 由于includes内部会访问arr[0],然后和传入的arr[0]比较的时候，如果不用这个缓存，
+   * 那么将是两个不同的代理对象,虽然这一步可以优化，但是由于 reactive([obj]) arr.includes(obj)
+   * 会返回false的原因，不得不重写了includes，因此这里的优化在includes重新实现了
+   *
+   *  */
   const reactiveMap = new WeakMap(); // 缓存代理过的target
   // 工厂函数
   function createReactiveObject(target, isReadonly, baseHandlers) {

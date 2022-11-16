@@ -8,16 +8,16 @@
   </head>
   <body>
     <script>
-      const { effect, reactive } = VueReactivity;
-      const original = ["foo"];
-      const state_array = reactive([original]);
-      effect(() => {
-        for (const key in state_array) {
+      const { effect, reactive, readonly } = VueReactivity;
+      const obj = {};
+      const arr = reactive([obj]);
+      effect(()=>{
+        for (const key in arr) {
           console.log(key);
         }
-      });
-      state_array[1] = "bar";
-      state_array.length = 0;
+      })
+      arr.push('da')
+
     </script>
   </body>
 </html>

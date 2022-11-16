@@ -282,7 +282,6 @@ describe('reactive', () => {
     let count = 0
     effect(() => {
       for (const key in state_array) {
-        console.log(key);
       }
       count++
     })
@@ -291,6 +290,20 @@ describe('reactive', () => {
     expect(count).toBe(3)
   })
 
+  test('for..of数组，会访问索引和length，因此他们都会和effect建立依赖关系', () => {
+    const original = ['foo']
+    const state_array = reactive([original])
+    let count = 0
+    effect(() => {
+      for (const item of state_array) {
+      }
+      count++
+    })
+    state_array[1] = 'bar'
+    expect(count).toBe(2)
+    state_array.length = 0
+    expect(count).toBe(5)
+  })
 
 
 })
