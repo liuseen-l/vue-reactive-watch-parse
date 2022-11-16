@@ -25,28 +25,28 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>40/40</span>
+                <span class='fraction'>46/46</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">95% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>14/14</span>
+                <span class='fraction'>19/20</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">66.66% </span>
+                <span class="strong">82.6% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>14/21</span>
+                <span class='fraction'>19/23</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>40/40</span>
+                <span class='fraction'>46/46</span>
             </div>
         
             
@@ -102,7 +102,13 @@
 <a name='L37'></a><a href='#L37'>37</a>
 <a name='L38'></a><a href='#L38'>38</a>
 <a name='L39'></a><a href='#L39'>39</a>
-<a name='L40'></a><a href='#L40'>40</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
+<a name='L40'></a><a href='#L40'>40</a>
+<a name='L41'></a><a href='#L41'>41</a>
+<a name='L42'></a><a href='#L42'>42</a>
+<a name='L43'></a><a href='#L43'>43</a>
+<a name='L44'></a><a href='#L44'>44</a>
+<a name='L45'></a><a href='#L45'>45</a>
+<a name='L46'></a><a href='#L46'>46</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -131,8 +137,8 @@
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">17x</span>
-<span class="cline-any cline-yes">17x</span>
+<span class="cline-any cline-yes">22x</span>
+<span class="cline-any cline-yes">22x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -141,7 +147,13 @@
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span></td><td class="text"><pre class="prettyprint lang-js">// 判断传入的数据是否为对象类型
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span></td><td class="text"><pre class="prettyprint lang-js">// 判断传入的数据是否为对象类型
 export const isObject = (val: unknown): val is Record&lt;any, any&gt; =&gt; val !== null &amp;&amp; typeof val === 'object'
 &nbsp;
 &nbsp;
@@ -174,20 +186,26 @@ export const hasOwn = (
 ): key is keyof typeof val =&gt; hasOwnProperty.call(val, key) // 相当于obj.hasOwnProperty(key)
 &nbsp;
 &nbsp;
-export const isString = (<span class="fstat-no" title="function not covered" >val: unknown): val is string =&gt; typeof val === <span class="fstat-no" title="function not covered" >'string'</span></span>
+export const isString = (val: unknown): val is string =&gt; typeof val === <span class="fstat-no" title="function not covered" >'string'</span>
 // 判断是否是一个number类型的key
-export const isIntegerKey = (<span class="fstat-no" title="function not covered" >key: unknown) =&gt; isString(key) &amp;&amp; key !== 'NaN' &amp;&amp; key[0] !== '-' &amp;&amp; '' + parseInt(key, 10) === <span class="fstat-no" title="function not covered" >key</span></span>
+export const isIntegerKey = (key: unknown) =&gt; isString(key) &amp;&amp; key !== 'NaN' &amp;&amp; key[0] !== '-' &amp;&amp; '' + parseInt(key, 10) === key
 &nbsp;
 &nbsp;
 // 判断值是否发生变化 Object.is 比 == 甚至 === 更严格，== 会类型转换，0 -0 ===会相等，而 Object.is 返回false
-export const hasChanged = (value: any, oldValue: any): boolean =&gt; !Object.is(value, oldValue)</pre></td></tr></table></pre>
+export const hasChanged = (value: any, oldValue: any): boolean =&gt; !Object.is(value, oldValue)
+&nbsp;
+&nbsp;
+export const toNumber = (val: any): any =&gt; {
+  const n = parseFloat(val)
+  return isNaN(n<span class="branch-0 cbranch-no" title="branch not covered" >) ? val : n</span>
+}</pre></td></tr></table></pre>
 
                 <div class='push'></div><!-- for sticky footer -->
             </div><!-- /wrapper -->
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2022-11-15T06:54:20.219Z
+                at 2022-11-16T07:38:00.011Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

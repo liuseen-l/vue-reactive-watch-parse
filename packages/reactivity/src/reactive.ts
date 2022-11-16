@@ -1,6 +1,6 @@
 import { isObject } from '@vue/shared'
 
-import { mutableHandlers, readonlyHandlers, shallowReactiveHandlers } from './baseHandlers'
+import { mutableHandlers, readonlyHandlers, shallowReactiveHandlers, shallowReadonlyHandlers } from './baseHandlers'
 
 
 const reactiveMap = new WeakMap<Target, any>(); // 缓存代理过的target
@@ -65,10 +65,13 @@ export function readonly<T extends object>(target: T) {
 }
 
 
-export function shallowReadOnly(target: object) {
-
+export function shallowReadonly<T extends object>(target: T): Readonly<T> {
+  return createReactiveObject(
+    target,
+    true,
+    shallowReadonlyHandlers,
+  )
 }
-
 
 
 

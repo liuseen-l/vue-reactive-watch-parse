@@ -5,7 +5,8 @@
   "description": "",
   "scripts": {
     "dev": "node scripts/dev.js reactivity  -f global -s",
-    "test": "vitest  --run"
+    "test": "vitest  --run --coverage",
+    "preview" : "vitest --ui"
   },
   "keywords": [],
   "author": "",

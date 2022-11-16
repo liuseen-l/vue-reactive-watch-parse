@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script src="../dist/reactivity.global.js"></script>
+  </head>
+  <body>
+    <script>
+      const { effect, reactive } = VueReactivity;
+      const original = ["foo"];
+      const state_array = reactive([original]);
+      effect(() => {
+        for (const key in state_array) {
+          console.log(key);
+        }
+      });
+      state_array[1] = "bar";
+      state_array.length = 0;
+    </script>
+  </body>
+</html>

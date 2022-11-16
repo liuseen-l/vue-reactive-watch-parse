@@ -22,6 +22,10 @@ var VueReactivity = (function (exports) {
   const isIntegerKey = (key) => isString(key) && key !== 'NaN' && key[0] !== '-' && '' + parseInt(key, 10) === key;
   // 判断值是否发生变化 Object.is 比 == 甚至 === 更严格，== 会类型转换，0 -0 ===会相等，而 Object.is 返回false
   const hasChanged = (value, oldValue) => !Object.is(value, oldValue);
+  const toNumber = (val) => {
+      const n = parseFloat(val);
+      return isNaN(n) ? val : n;
+  };
 
   /**
    * effect1(()=>{
@@ -121,7 +125,6 @@ var VueReactivity = (function (exports) {
           dep = new Set();
           depsMap.set(key, dep);
       }
-      // 判断当前的副作用函数是否已经被收集过，收集过就不用再收集了，虽然set可以过滤重复的，但还是有效率问题
       trackEffects(dep);
   }
   function trackEffects(dep) {
@@ -136,50 +139,69 @@ var VueReactivity = (function (exports) {
           activeEffect.deps.push(dep); // 副作用函数保存自己被哪些 target.key 所收集
       }
   }
-  function trigger(target, key, type) {
+  /**
+   *
+   * @param target {Target }
+   * @param key   { string | number | symbol }
+   * @param type  { TriggerOpTypes }  触发更新的操作，修改，删除，新增
+   * @param newValue  { unknown }  用于修改 arr.length = xxx 的时候，此时的 key == 'length' 而 newValue 就是修改的长度的值
+   * @returns
+   */
+  function trigger(target, key, type, newValue) {
       // 设置新的值以后，取出当前target所对应的大桶
       const depsMap = targetMap.get(target);
       // 如果没有大桶直接返回,表明属性没有依赖任何的effect
       if (!depsMap)
           return;
       let deps = []; // [set,set]
-      // 执行 target key 的副作用函数
-      if (key !== void 0) { // 这里有个问题,就是当前trigger是由于增添属性触发的时候,这里 target key 会获取到undefined
-          deps.push(depsMap.get(key));
+      // 如果修改 arr.length，将索引大于等于 newValue(修改length的值) 的副作用函数取出来执行
+      if (key === 'length' && isArray(target)) {
+          const newLength = toNumber(newValue);
+          depsMap.forEach((dep, key) => {
+              if (key === 'length' || key >= newLength) {
+                  deps.push(dep);
+              }
+          });
       }
-      switch (type) {
-          // 只有当操作类型为 'ADD' 时，才触发 target 身上 key == ITERATE_KEY 相关联的副作用函数重新执行
-          case "add" /* TriggerOpTypes.ADD */:
-              // 这里会进行不同的判断,因为保存增添操作所对应的副作用函数的标识符会根据数据类型不同而变化
-              if (!isArray(target)) { // 如果增添属性的对象是普对对象,取出for in的副作用函数
-                  deps.push(depsMap.get(ITERATE_KEY));
-                  if (isMap(target)) { // // 如果增添属性的对象是Map对象,取出Map所对应的for in副作用函数
-                      deps.push(depsMap.get(MAP_KEY_ITERATE_KEY));
+      else {
+          // 执行 target key 的副作用函数
+          if (key !== void 0) { // 这里有个问题,就是当前trigger是由于增添属性触发的时候,这里 target key 会获取到undefined
+              deps.push(depsMap.get(key));
+          }
+          switch (type) {
+              // 只有当操作类型为 'ADD' 时，才触发 target 身上 key == ITERATE_KEY 相关联的副作用函数重新执行
+              case "add" /* TriggerOpTypes.ADD */:
+                  // 这里会进行不同的判断,因为保存增添操作所对应的副作用函数的标识符会根据数据类型不同而变化
+                  if (!isArray(target)) { // 如果增添属性的对象是普对对象,取出for in的副作用函数
+                      deps.push(depsMap.get(ITERATE_KEY));
+                      if (isMap(target)) { // // 如果增添属性的对象是Map对象,取出Map所对应的for in副作用函数
+                          deps.push(depsMap.get(MAP_KEY_ITERATE_KEY));
+                      }
                   }
-              }
-              /**
-               *  这里为什么还需要 isIntergerKey 去判断 key 是否为符合数组的索引类型?
-               *    因为 TriggerOpTypes.ADD 只是确认了当前的属性为新增属性,当走到 else if (isIntegerKey(key)) 的时候
-               *    只能说明 target 是数组类型,但是不能确保key是不是符合数组的索引属性,因此需要判断一下
-               *  */
-              else if (isIntegerKey(key)) {
-                  deps.push(depsMap.get('length'));
-              }
-              break;
-          // 只有当操作类型为 'DELETE' 时，才触发 target 身上 key == ITERATE_KEY 相关联的副作用函数重新执行
-          case "delete" /* TriggerOpTypes.DELETE */:
-              if (!isArray(target)) {
-                  deps.push(depsMap.get(ITERATE_KEY));
+                  /**
+                   *  这里为什么还需要 isIntergerKey 去判断 key 是否为符合数组的索引类型?
+                   *    因为 TriggerOpTypes.ADD 只是确认了当前的属性为新增属性,当走到 else if (isIntegerKey(key)) 的时候
+                   *    只能说明 target 是数组类型,但是不能确保key是不是符合数组的索引属性,因此需要判断一下
+                   *  */
+                  else if (isIntegerKey(key)) { // 如果为数组新增元素，应该触发与length相关的副作用函数
+                      deps.push(depsMap.get('length'));
+                  }
+                  break;
+              // 只有当操作类型为 'DELETE' 时，才触发 target 身上 key == ITERATE_KEY 相关联的副作用函数重新执行
+              case "delete" /* TriggerOpTypes.DELETE */:
+                  if (!isArray(target)) {
+                      deps.push(depsMap.get(ITERATE_KEY));
+                      if (isMap(target)) {
+                          deps.push(depsMap.get(MAP_KEY_ITERATE_KEY));
+                      }
+                  }
+                  break;
+              case "set" /* TriggerOpTypes.SET */:
                   if (isMap(target)) {
-                      deps.push(depsMap.get(MAP_KEY_ITERATE_KEY));
+                      deps.push(depsMap.get(ITERATE_KEY));
                   }
-              }
-              break;
-          case "set" /* TriggerOpTypes.SET */:
-              if (isMap(target)) {
-                  deps.push(depsMap.get(ITERATE_KEY));
-              }
-              break;
+                  break;
+          }
       }
       const effects = [];
       for (const dep of deps) { // dep -> set
@@ -274,10 +296,10 @@ var VueReactivity = (function (exports) {
           if (target === toRaw(receiver)) {
               // 如果没有访问的key，无论是对于数组还是对象，都是新增属性
               if (!hadKey) {
-                  trigger(target, key, "add" /* TriggerOpTypes.ADD */);
+                  trigger(target, key, "add" /* TriggerOpTypes.ADD */, value);
               }
               else if (hasChanged(value, oldValue)) { // 如果我们修改的属性值和原来的值一样，没必要去更新，影响性能
-                  trigger(target, key, "set" /* TriggerOpTypes.SET */);
+                  trigger(target, key, "set" /* TriggerOpTypes.SET */, value);
               }
           }
           return res;
@@ -339,6 +361,11 @@ var VueReactivity = (function (exports) {
           return true;
       }
   };
+  // 浅只读模块
+  const shallowReadonlyGet = createGetter(true, true);
+  const shallowReadonlyHandlers = extend({}, readonlyHandlers, {
+      get: shallowReadonlyGet
+  });
 
   const reactiveMap = new WeakMap(); // 缓存代理过的target
   // 工厂函数
@@ -375,6 +402,9 @@ var VueReactivity = (function (exports) {
   }
   function readonly(target) {
       return createReactiveObject(target, true, readonlyHandlers);
+  }
+  function shallowReadonly(target) {
+      return createReactiveObject(target, true, shallowReadonlyHandlers);
   }
   function toRaw(observed) {
       // 如果传入的对象是一个响应式对象,例如reactive代理的响应式对象,可以访问该代理对象的'__v_raw'属性,这个属性会返回代理对象的原始对象
@@ -510,7 +540,7 @@ var VueReactivity = (function (exports) {
   exports.readonly = readonly;
   exports.ref = ref;
   exports.shallowReactive = shallowReactive;
-  exports.targetMap = targetMap;
+  exports.shallowReadonly = shallowReadonly;
 
   Object.defineProperty(exports, '__esModule', { value: true });
 

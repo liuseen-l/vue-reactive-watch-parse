@@ -61,9 +61,9 @@ function createSetter(shallow = false) {
     if (target === toRaw(receiver)) {
       // 如果没有访问的key，无论是对于数组还是对象，都是新增属性
       if (!hadKey) {
-        trigger(target, key, TriggerOpTypes.ADD)
+        trigger(target, key, TriggerOpTypes.ADD, value)
       } else if (hasChanged(value, oldValue)) { // 如果我们修改的属性值和原来的值一样，没必要去更新，影响性能
-        trigger(target, key, TriggerOpTypes.SET)
+        trigger(target, key, TriggerOpTypes.SET, value)
       }
     }
     return res
@@ -145,4 +145,12 @@ export const readonlyHandlers: ProxyHandler<object> = {
   }
 }
 
-
+// 浅只读模块
+const shallowReadonlyGet = createGetter(true, true)
+export const shallowReadonlyHandlers = extend(
+  {},
+  readonlyHandlers,
+  {
+    get: shallowReadonlyGet
+  }
+)

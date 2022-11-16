@@ -38,3 +38,9 @@ export const isIntegerKey = (key: unknown) => isString(key) && key !== 'NaN' && 
 
 // 判断值是否发生变化 Object.is 比 == 甚至 === 更严格，== 会类型转换，0 -0 ===会相等，而 Object.is 返回false
 export const hasChanged = (value: any, oldValue: any): boolean => !Object.is(value, oldValue)
+
+
+export const toNumber = (val: any): any => {
+  const n = parseFloat(val)
+  return isNaN(n) ? val : n
+}

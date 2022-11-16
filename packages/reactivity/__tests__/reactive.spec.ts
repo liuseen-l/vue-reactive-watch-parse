@@ -1,5 +1,5 @@
 import { test, expect, describe, it } from 'vitest'
-import { reactive, readonly, shallowReactive } from "../src/reactive";
+import { reactive, readonly, shallowReactive, shallowReadonly } from "../src/reactive";
 import { effect } from "../src/effect"
 
 
@@ -67,10 +67,19 @@ describe('reactive', () => {
    * true
    */
   test('readonly and reactive', () => {
-    const state_reactive = reactive({ foo: 1 })
+    const state_reactive = reactive({ foo: { bar: 1 } })
     const state_readonly = readonly(state_reactive)
     expect(state_readonly === state_reactive).toBe(false)
+    expect(state_reactive.foo === state_readonly.foo).toBe(false) // reactive({bar:1}) !== readonly(reactive({bar:1}))
   })
 
+  test('shallowReadonly and reactive', () => {
+    const state_reactive = reactive({ foo: { bar: 1 } })
+    const state_readonly = shallowReadonly(state_reactive)
+    expect(state_readonly === state_reactive).toBe(false)
+    expect(state_reactive.foo === state_readonly.foo).toBe(true) //  reactive({bar:1}) ==== reactive({bar:1})
+  })
+
+  
 
 })

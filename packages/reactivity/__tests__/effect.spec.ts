@@ -1,5 +1,5 @@
 import { test, expect, describe, it } from 'vitest'
-import { reactive, readonly, shallowReactive } from "../src/reactive";
+import { reactive, readonly, shallowReactive, shallowReadonly } from "../src/reactive";
 import { effect } from "../src/effect"
 
 
@@ -223,14 +223,74 @@ describe('reactive', () => {
     let count = 0
     effect(() => {
       // state.foo 是通过 Reflect.get(target,key,receiv er)拿不到的，此时的target是 obj,相当于obj.foo，返回的时候由于foo对应的值是一个对象，reactive返回的时候会进行包装
-      // 因此返回的state.foo 首先是 reactive({bar:1}),由于最外层是readonly，最后返回的就是 readonly(reactive({bar:1}))
-      // 总体下来就是 obj.foo 以及 reactive({bar:1}).bar，和effect建立了依赖关系，因此直接修改obj的属性，都会触发依赖更新
-      console.log(state.foo.bar);
+      // 因此返回的res 首先是 reactive({bar:1}),由于最外层是readonly，最后返回的就是 readonly(reactive({bar:1}))
+      // 总体下来就是 obj.foo 以及 reactive({bar:1}).bar，和effect建立了依赖关系，因此直接修改obj的属性，都会触发依赖更新,但是直接修改state的属性值会警告
+      state.foo.bar
       count++
     });
     state.foo.bar = 3;
     expect(count).toBe(1)
   })
+
+  test('shallowReadonly and reactive', () => {
+    const original = { foo: { bar: 1 } };
+    const obj = reactive(original);
+    const state = shallowReadonly(obj);
+    let count = 0
+    effect(() => {
+      // state.foo 是通过 Reflect.get(target,key,receiv er)拿不到的，此时的target是 obj,相当于obj.foo，返回的时候由于foo对应的值是一个对象，reactive返回的时候会进行包装
+      // 因此返回的res 首先是 reactive({bar:1}),由于最外层是shallowReadonly，最后返回的就是 res
+      // 总体下来就是 obj.foo 以及 reactive({bar:1}).bar，和effect建立了依赖关系，因此直接修改obj的属性，都会触发依赖更新，但是直接修改state最外层的属性值会警告，里层不会，因为返回res的时候没有用readonly包装
+      state.foo.bar;
+      count++
+    });
+    obj.foo.bar = 3;
+    expect(count).toBe(2)
+  })
+
+
+  /**
+   * 首先数组实例的length属性建立和effect的依赖关系，然后我们在新增元素的时候，会取出和length有依赖关系的effect，重新执行
+   */
+  test('建立与数组长度的依赖关系，然后新增数组元素', () => {
+    const original = ['foo']
+    const state_array = reactive([original])
+    let count = 0
+    effect(() => {
+      state_array.length
+      count++
+    })
+    state_array[1] = 'bar'
+    expect(count).toBe(2)
+  })
+
+  test('修改数组长度，取出大于等于新设置的长度的effect重新执行', () => {
+    const original = ['foo']
+    const state_array = reactive([original])
+    let count = 0
+    effect(() => {
+      state_array[0]
+      count++
+    })
+    state_array.length = 0
+    expect(count).toBe(2)
+  })
+
+  test('for..in数组建立effect和length的依赖关系，涉及length的操作，应重新触发length相关的effect', () => {
+    const original = ['foo']
+    const state_array = reactive([original])
+    let count = 0
+    effect(() => {
+      for (const key in state_array) {
+        console.log(key);
+      }
+      count++
+    })
+    state_array[1] = 'bar'
+    state_array.length = 0
+    expect(count).toBe(3)
+  })
+
 
 
 })
