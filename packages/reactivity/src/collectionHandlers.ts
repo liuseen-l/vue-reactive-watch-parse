@@ -20,9 +20,10 @@ function get(
   isReadonly = false,
   isShallow = false
 ) {
-  // #1772: readonly(reactive(Map)) should return readonly + reactive version
-  // of the value
+
+  // 先获取代理对象的原始map
   target = (target as any)[ReactiveFlags.RAW]
+  
   const rawTarget = toRaw(target)
   const rawKey = toRaw(key)
   if (!isReadonly) {
@@ -91,25 +92,35 @@ function add(this: SetTypes, value: unknown) {
 }
 
 function set(this: MapTypes, key: unknown, value: unknown) {
+  // 获取新增元素的原始数据
   value = toRaw(value)
+  // 确保代理的对象的原始 map 是真正的原始map
   const target = toRaw(this)
+  
+  // 获取原始map 的 has 和 get 方法
   const { has, get } = getProto(target)
 
+  // 判断当前原始map有没有这个key
   let hadKey = has.call(target, key)
-  if (!hadKey) {
-    key = toRaw(key)
-    hadKey = has.call(target, key)
-  } else if (false) {
-    checkIdentityKeys(target, has, key)
-  }
 
+  // if (!hadKey) {
+  //   key = toRaw(key)
+  //   hadKey = has.call(target, key)
+  // } 
+
+  // 拿到原始值
   const oldValue = get.call(target, key)
+
+  // 设置值
   target.set(key, value)
+
+  // 根据原来有没有这个key 判断当前的set 操作是新增数据还是修改数据
   if (!hadKey) {
     trigger(target, key, TriggerOpTypes.ADD, value)
-  } else if (hasChanged(value, oldValue)) {
+  } else if (hasChanged(value, oldValue)) { // 在触发修改操作之前，判断一下新设置的值是否和原来的值是一样的 
     trigger(target, key, TriggerOpTypes.SET, value)
   }
+  
   return this
 }
 
@@ -222,6 +233,7 @@ function createIterableMethod(
 function createInstrumentations() {
   const mutableInstrumentations: Record<string, Function> = {
     get(this: MapTypes, key: unknown) { // Map
+      // 此时的this是map的代理对象
       return get(this, key)
     },
     get size() { // Set Map
