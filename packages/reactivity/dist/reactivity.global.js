@@ -27,6 +27,10 @@ var VueReactivity = (function (exports) {
       return isNaN(n) ? val : n;
   };
   const isSymbol = (val) => typeof val === 'symbol';
+  const toRawType = (value) => {
+      // extract "RawType" from strings like "[object RawType]"
+      return toTypeString(value).slice(8, -1);
+  };
 
   /**
    * effect1(()=>{
@@ -175,7 +179,8 @@ var VueReactivity = (function (exports) {
       }
       else {
           // 执行 target key 的副作用函数
-          if (key !== void 0) { // 这里有个问题,就是当前trigger是由于增添属性触发的时候,这里 target key 会获取到undefined
+          if (key !== void 0) {
+              // 这里有个问题,就是当前trigger是由于增添属性触发的时候,这里 target key 会获取到 undefined，set在删除属性这里也会拿到undefined，因为set没有get方法，因此没有元素和effect建立依赖关系
               deps.push(depsMap.get(key));
           }
           switch (type) {
@@ -313,8 +318,8 @@ var VueReactivity = (function (exports) {
                * 这样调用push时，为什么要将方法内部的 this 设置为当前的代理对象呢 ？
                * 因为 push 方法不止访问和设置 length，而且还会触发当前 push 的索引的 setter，比如现在 arr = reactive([obj])只有一个元素，那么
                * 我们 push 的时候就会实现 arr[1] = xxx 的操作，这是一个ADD操作，我们应该取出length相关联的 effect 并执行，而这一切都需要触发setter才行
-               * 因此需要将 this 调整为原始数组的代理对象，而我们需要的这个 this 在返回重写的 push 方法时就设置好了。如果在这里不用apply调用的话，就是原始数组调用
-               * [obj][1] = xxx ,这不会触发setter，也就不会将 length 相关的effect取出来执行
+               * 因此需要将 this 调整为原始数组的代理对象，而我们调用这个方法的时候是通过代理对象调用的，因此this指向的就是代理对象。如果在这里不用apply
+               * 调用的话，就是原始数组调用，[obj][1] = xxx ,这不会触发setter，也就不会将 length 相关的effect取出来执行
                */
               const res = toRaw(this)[key].apply(this, args);
               resetTracking();
@@ -400,7 +405,7 @@ var VueReactivity = (function (exports) {
       };
   }
   // 'foo' in p 
-  function has(target, key) {
+  function has$1(target, key) {
       const result = Reflect.has(target, key);
       track(target, key);
       return result;
@@ -424,12 +429,12 @@ var VueReactivity = (function (exports) {
       return result;
   }
   // 深层次响应式模块的Handlers
-  const get = createGetter();
-  const set = createSetter();
+  const get$1 = createGetter();
+  const set$1 = createSetter();
   const mutableHandlers = {
-      get,
-      set,
-      has,
+      get: get$1,
+      set: set$1,
+      has: has$1,
       ownKeys,
       deleteProperty
   };
@@ -464,12 +469,215 @@ var VueReactivity = (function (exports) {
   const builtInSymbols = new Set(
   /*#__PURE__*/
   Object.getOwnPropertyNames(Symbol)
-      // ios10.x Object.getOwnPropertyNames(Symbol) can enumerate 'arguments' and 'caller'
-      // but accessing them on Symbol leads to TypeError because Symbol is a strict mode
-      // function
       .filter(key => key !== 'arguments' && key !== 'caller')
       .map(key => Symbol[key])
       .filter(isSymbol));
+
+  const toShallow = (value) => value;
+  const getProto = (v) => Reflect.getPrototypeOf(v);
+  function get(target, key, isReadonly = false, isShallow = false) {
+      // #1772: readonly(reactive(Map)) should return readonly + reactive version
+      // of the value
+      target = target["__v_raw" /* ReactiveFlags.RAW */];
+      const rawTarget = toRaw(target);
+      const rawKey = toRaw(key);
+      if (!isReadonly) {
+          if (key !== rawKey) {
+              track(rawTarget, key);
+          }
+          track(rawTarget, rawKey);
+      }
+      const { has } = getProto(rawTarget);
+      const wrap = isShallow ? toShallow : isReadonly ? toReadonly : toReactive;
+      if (has.call(rawTarget, key)) {
+          return wrap(target.get(key));
+      }
+      else if (has.call(rawTarget, rawKey)) {
+          return wrap(target.get(rawKey));
+      }
+      else if (target !== rawTarget) {
+          // #3602 readonly(reactive(Map))
+          // ensure that the nested reactive `Map` can do tracking for itself
+          target.get(key);
+      }
+  }
+  function has(key, isReadonly = false) {
+      const target = this["__v_raw" /* ReactiveFlags.RAW */];
+      const rawTarget = toRaw(target);
+      const rawKey = toRaw(key);
+      if (!isReadonly) {
+          if (key !== rawKey) {
+              track(rawTarget, key);
+          }
+          track(rawTarget, rawKey);
+      }
+      return key === rawKey
+          ? target.has(key)
+          : target.has(key) || target.has(rawKey);
+  }
+  function size(target, isReadonly = false) {
+      // 拿到代理对象的原始集合
+      target = target["__v_raw" /* ReactiveFlags.RAW */];
+      !isReadonly && track(toRaw(target), ITERATE_KEY);
+      //  在这里我们将Reflect的第三个值更改为了target，即代理对象的原始集合，因为访问 Set 的 size 属性时，内部会将 S 赋值为this(当前size属性的调用者),然后调用S.[[SetData]]，
+      //  如果第三个参数不传入原始集合的话，那么当前 proxy 身上是没有 [[SetData]] 这个内部方法的，因此会报错
+      return Reflect.get(target, 'size', target);
+  }
+  // 新增元素
+  function add(value) {
+      // 如果新增的元素是响应式对象，我们给他先处理一下，拿到他的原始对象，将原始对象添加进去
+      value = toRaw(value);
+      // 还是拿到原始对象
+      const target = toRaw(this);
+      // 获取原始对象的 has 方法
+      const { has } = getProto(target);
+      // 判断当前的原始集合中是否含有这个元素，防止重复添加，虽然set有去重功能，但还是有性能的消耗
+      const hadKey = has.call(target, value);
+      // 如果没有
+      if (!hadKey) {
+          // 向原始集合中新增元素
+          target.add(value);
+          // 触发新增元素的trigger，可以将size绑定的副作用函数重新执行
+          trigger(target, value, "add" /* TriggerOpTypes.ADD */, value);
+      }
+      return this;
+  }
+  function set(key, value) {
+      value = toRaw(value);
+      const target = toRaw(this);
+      const { has, get } = getProto(target);
+      let hadKey = has.call(target, key);
+      if (!hadKey) {
+          key = toRaw(key);
+          hadKey = has.call(target, key);
+      }
+      const oldValue = get.call(target, key);
+      target.set(key, value);
+      if (!hadKey) {
+          trigger(target, key, "add" /* TriggerOpTypes.ADD */, value);
+      }
+      else if (hasChanged(value, oldValue)) {
+          trigger(target, key, "set" /* TriggerOpTypes.SET */, value);
+      }
+      return this;
+  }
+  function deleteEntry(key) {
+      // 还是先获取代理对象的原始集合
+      const target = toRaw(this);
+      // 获取原始集合的 get 和 set 方法
+      const { has, get } = getProto(target);
+      // 判断集合是否有当前这个值
+      let hadKey = has.call(target, key);
+      // 如果是 map.delete(map.get(obj))
+      // if (!hadKey) {
+      //   key = toRaw(key)
+      //   hadKey = has.call(target, key)
+      // }
+      // 先判断是否能拿到 get 方法，因为set原始对象是没有 get 这个方法的，有 get 方法说明是 target 是 map，调用他的 get 方法获取值
+      get ? get.call(target, key) : undefined;
+      // 通过原始集合删除这个值（因为只有原始集合内部方法才有[[SetData]]） 
+      const result = target.delete(key);
+      // 如果有这个值再删除
+      if (hadKey) {
+          // 需要将 size 收集的依赖拿出来执行
+          trigger(target, key, "delete" /* TriggerOpTypes.DELETE */, undefined);
+      }
+      return result;
+  }
+  function createForEach(isReadonly, isShallow) {
+      return function forEach(callback, thisArg) {
+          const observed = this;
+          const target = observed["__v_raw" /* ReactiveFlags.RAW */];
+          const rawTarget = toRaw(target);
+          const wrap = isShallow ? toShallow : isReadonly ? toReadonly : toReactive;
+          !isReadonly && track(rawTarget, ITERATE_KEY);
+          return target.forEach((value, key) => {
+              // important: make sure the callback is
+              // 1. invoked with the reactive map as `this` and 3rd arg
+              // 2. the value received should be a corresponding reactive/readonly.
+              return callback.call(thisArg, wrap(value), wrap(key), observed);
+          });
+      };
+  }
+  function createIterableMethod(method, isReadonly, isShallow) {
+      return function (...args) {
+          const target = this["__v_raw" /* ReactiveFlags.RAW */];
+          const rawTarget = toRaw(target);
+          const targetIsMap = isMap(rawTarget);
+          const isPair = method === 'entries' || (method === Symbol.iterator && targetIsMap);
+          const isKeyOnly = method === 'keys' && targetIsMap;
+          const innerIterator = target[method](...args);
+          const wrap = isShallow ? toShallow : isReadonly ? toReadonly : toReactive;
+          !isReadonly &&
+              track(rawTarget, isKeyOnly ? MAP_KEY_ITERATE_KEY : ITERATE_KEY);
+          // return a wrapped iterator which returns observed versions of the
+          // values emitted from the real iterator
+          return {
+              // iterator protocol
+              next() {
+                  const { value, done } = innerIterator.next();
+                  return done
+                      ? { value, done }
+                      : {
+                          value: isPair ? [wrap(value[0]), wrap(value[1])] : wrap(value),
+                          done
+                      };
+              },
+              // iterable protocol
+              [Symbol.iterator]() {
+                  return this;
+              }
+          };
+      };
+  }
+  function createInstrumentations() {
+      const mutableInstrumentations = {
+          get(key) {
+              return get(this, key);
+          },
+          get size() {
+              /**
+               *  当代理对象访问size属性的时候，会执行到这里，由于size是一个访问器属性
+               *  因此get size()中的代码都会执行，在size作用域里面 this 是 set 代理的对象，但是我们最后返回的结果是调用size()函数的结果
+               *
+               *  */
+              return size(this);
+          },
+          has,
+          add,
+          set,
+          delete: deleteEntry,
+          forEach: createForEach(false, false)
+      };
+      const iteratorMethods = ['keys', 'values', 'entries', Symbol.iterator];
+      iteratorMethods.forEach(method => {
+          // 为 mutableInstrumentations 新增keys values entries 方法
+          mutableInstrumentations[method] = createIterableMethod(method, false, false);
+      });
+      return [
+          mutableInstrumentations,
+      ];
+  }
+  const [mutableInstrumentations,] = createInstrumentations();
+  function createInstrumentationGetter(isReadonly, shallow) {
+      const instrumentations = mutableInstrumentations;
+      // 这个函数是 proxy 当中的 get 函数，
+      return (target, key, receiver) => {
+          if (key === "__v_isReactive" /* ReactiveFlags.IS_REACTIVE */) {
+              return !isReadonly;
+          }
+          else if (key === "__v_isReadonly" /* ReactiveFlags.IS_READONLY */) {
+              return isReadonly;
+          }
+          else if (key === "__v_raw" /* ReactiveFlags.RAW */) {
+              return target;
+          }
+          return Reflect.get(hasOwn(instrumentations, key) && key in target ? instrumentations : target, key, receiver);
+      };
+  }
+  const mutableCollectionHandlers = {
+      get: createInstrumentationGetter(false)
+  };
 
   /**
    *
@@ -480,8 +688,29 @@ var VueReactivity = (function (exports) {
    *
    *  */
   const reactiveMap = new WeakMap(); // 缓存代理过的target
+  const shallowReactiveMap = new WeakMap();
+  const readonlyMap = new WeakMap();
+  const shallowReadonlyMap = new WeakMap();
+  function targetTypeMap(rawType) {
+      switch (rawType) {
+          case 'Object':
+          case 'Array':
+              return 1 /* TargetType.COMMON */;
+          case 'Map':
+          case 'Set':
+          case 'WeakMap':
+          case 'WeakSet':
+              return 2 /* TargetType.COLLECTION */;
+          default:
+              return 0 /* TargetType.INVALID */;
+      }
+  }
+  // 获取代理目标的类型
+  function getTargetType(value) {
+      return value["__v_skip" /* ReactiveFlags.SKIP */] || !Object.isExtensible(value) ? 0 /* TargetType.INVALID */ : targetTypeMap(toRawType(value));
+  }
   // 工厂函数
-  function createReactiveObject(target, isReadonly, baseHandlers) {
+  function createReactiveObject(target, isReadonly, baseHandlers, collectionHandlers, proxyMap) {
       // 判断传入的数据是否为对象
       if (!isObject(target)) {
           // __DEV__用于判断当前的代码编写环境为开发环境的时候，发出警告，因此在生产环境下这段代码为dead code，利用tree-shaking(依赖于ES Module)移除掉
@@ -498,25 +727,33 @@ var VueReactivity = (function (exports) {
           return target;
       }
       // 优先通过原始对象 obj 寻找之前创建的代理对象，如果找到了，直接返回已有的代理对象，简单的说就是代理过的对象不再重复代理，取出之前创建的代理对象返回
-      const existionProxy = reactiveMap.get(target);
+      const existionProxy = proxyMap.get(target);
       if (existionProxy) {
           return existionProxy;
       }
-      const proxy = new Proxy(target, baseHandlers); // 数据劫持
-      reactiveMap.set(target, proxy); // 缓存
+      // 在这里需要对传入的target进行一个判断，因为set，map的处理方式和普通的对象或者数组不一样
+      const targetType = getTargetType(target);
+      // 如果是个无效的target，直接返回
+      if (targetType === 0 /* TargetType.INVALID */) {
+          return target;
+      }
+      const proxy = new Proxy(target, 
+      // 根据不同的target类型，选择不同的handlers，因为集合的处理方式和普通对象或者数组不一样
+      targetType === 2 /* TargetType.COLLECTION */ ? collectionHandlers : baseHandlers); // 数据劫持
+      proxyMap.set(target, proxy); // 缓存
       return proxy; // 返回代理
   }
   function shallowReactive(target) {
-      return createReactiveObject(target, false, shallowReactiveHandlers);
+      return createReactiveObject(target, false, shallowReactiveHandlers, mutableCollectionHandlers, shallowReactiveMap);
   }
   function reactive(target) {
-      return createReactiveObject(target, false, mutableHandlers);
+      return createReactiveObject(target, false, mutableHandlers, mutableCollectionHandlers, reactiveMap);
   }
   function readonly(target) {
-      return createReactiveObject(target, true, readonlyHandlers);
+      return createReactiveObject(target, true, readonlyHandlers, mutableCollectionHandlers, readonlyMap);
   }
   function shallowReadonly(target) {
-      return createReactiveObject(target, true, shallowReadonlyHandlers);
+      return createReactiveObject(target, true, shallowReadonlyHandlers, mutableCollectionHandlers, shallowReadonlyMap);
   }
   function toRaw(observed) {
       // 如果传入的对象是一个响应式对象,例如reactive代理的响应式对象,可以访问该代理对象的'__v_raw'属性,这个属性会返回代理对象的原始对象
@@ -529,6 +766,7 @@ var VueReactivity = (function (exports) {
   // 如果传入的原始数据是对象类型,那么调用reactive去进行代理,这里reactive内部其实也是进行了相关的优化,如果一个原始值已经是被代理过的,那么会直接返回已经代理的对象,就不用重新去代理了
   // 如果传入的原始数据不是对象类型,那么直接返回该数据
   isObject(value) ? reactive(value) : value;
+  const toReadonly = (value) => isObject(value) ? readonly(value) : value;
 
   class ComputedRefImpl {
       _setter;

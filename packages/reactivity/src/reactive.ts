@@ -1,7 +1,6 @@
-import { isObject } from '@vue/shared'
-
+import { isObject, toRawType } from '@vue/shared'
 import { mutableHandlers, readonlyHandlers, shallowReactiveHandlers, shallowReadonlyHandlers } from './baseHandlers'
-
+import { mutableCollectionHandlers, } from './collectionHandlers';
 
 /**
  * 
@@ -10,11 +9,45 @@ import { mutableHandlers, readonlyHandlers, shallowReactiveHandlers, shallowRead
  * 那么将是两个不同的代理对象,虽然这一步可以优化，但是由于 reactive([obj]) arr.includes(obj) 
  * 会返回false的原因，不得不重写了includes，因此这里的优化在includes重新实现了
  * 
- *  */ 
-const reactiveMap = new WeakMap<Target, any>(); // 缓存代理过的target
+ *  */
+export const reactiveMap = new WeakMap<Target, any>(); // 缓存代理过的target
+export const shallowReactiveMap = new WeakMap<Target, any>()
+export const readonlyMap = new WeakMap<Target, any>()
+export const shallowReadonlyMap = new WeakMap<Target, any>()
+
+const enum TargetType {
+  INVALID = 0, // 无效的
+  COMMON = 1, // 正常的对象或者数组
+  COLLECTION = 2 // 集合
+}
+
+function targetTypeMap(rawType: string) {
+  switch (rawType) {
+    case 'Object':
+    case 'Array':
+      return TargetType.COMMON
+    case 'Map':
+    case 'Set':
+    case 'WeakMap':
+    case 'WeakSet':
+      return TargetType.COLLECTION
+    default:
+      return TargetType.INVALID
+  }
+}
+
+// 获取代理目标的类型
+function getTargetType(value: Target) {
+  return value[ReactiveFlags.SKIP] || !Object.isExtensible(value) ? TargetType.INVALID : targetTypeMap(toRawType(value))
+}
 
 // 工厂函数
-export function createReactiveObject(target: Target, isReadonly: boolean, baseHandlers: ProxyHandler<any>,) {
+export function createReactiveObject(
+  target: Target,
+  isReadonly: boolean,
+  baseHandlers: ProxyHandler<any>,
+  collectionHandlers: ProxyHandler<any>,
+  proxyMap: WeakMap<Target, any>) {
 
   // 判断传入的数据是否为对象
   if (!isObject(target)) {
@@ -34,15 +67,25 @@ export function createReactiveObject(target: Target, isReadonly: boolean, baseHa
   }
 
   // 优先通过原始对象 obj 寻找之前创建的代理对象，如果找到了，直接返回已有的代理对象，简单的说就是代理过的对象不再重复代理，取出之前创建的代理对象返回
-  const existionProxy = reactiveMap.get(target)
-
+  const existionProxy = proxyMap.get(target)
   if (existionProxy) {
     return existionProxy
   }
 
-  const proxy = new Proxy(target, baseHandlers) // 数据劫持
+  // 在这里需要对传入的target进行一个判断，因为set，map的处理方式和普通的对象或者数组不一样
+  const targetType = getTargetType(target)
+  // 如果是个无效的target，直接返回
+  if (targetType === TargetType.INVALID) {
+    return target
+  }
 
-  reactiveMap.set(target, proxy) // 缓存
+  const proxy = new Proxy(
+    target,
+    // 根据不同的target类型，选择不同的handlers，因为集合的处理方式和普通对象或者数组不一样
+    targetType === TargetType.COLLECTION ? collectionHandlers : baseHandlers
+  ) // 数据劫持
+
+  proxyMap.set(target, proxy) // 缓存
   return proxy // 返回代理
 }
 
@@ -52,7 +95,9 @@ export function shallowReactive<T extends object>(target: T): ShallowReactive<T>
   return createReactiveObject(
     target,
     false,
-    shallowReactiveHandlers
+    shallowReactiveHandlers,
+    mutableCollectionHandlers,
+    shallowReactiveMap
   )
 }
 
@@ -60,7 +105,9 @@ export function reactive(target: object) {
   return createReactiveObject(
     target,
     false,
-    mutableHandlers
+    mutableHandlers,
+    mutableCollectionHandlers,
+    reactiveMap
   )
 }
 
@@ -68,19 +115,21 @@ export function readonly<T extends object>(target: T) {
   return createReactiveObject(
     target,
     true,
-    readonlyHandlers
+    readonlyHandlers,
+    mutableCollectionHandlers,
+    readonlyMap
   )
 }
-
 
 export function shallowReadonly<T extends object>(target: T): Readonly<T> {
   return createReactiveObject(
     target,
     true,
     shallowReadonlyHandlers,
+    mutableCollectionHandlers,
+    shallowReadonlyMap
   )
 }
-
 
 export interface Target {
   [ReactiveFlags.SKIP]?: boolean
@@ -110,3 +159,7 @@ export const toReactive = <T extends unknown>(value: T): T =>
   // 如果传入的原始数据是对象类型,那么调用reactive去进行代理,这里reactive内部其实也是进行了相关的优化,如果一个原始值已经是被代理过的,那么会直接返回已经代理的对象,就不用重新去代理了
   // 如果传入的原始数据不是对象类型,那么直接返回该数据
   isObject(value) ? reactive(value as object) : value
+
+
+  export const toReadonly = <T extends unknown>(value: T): T =>
+  isObject(value) ? readonly(value as Record<any, any>) : value

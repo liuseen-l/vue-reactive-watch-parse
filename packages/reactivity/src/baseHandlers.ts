@@ -51,8 +51,8 @@ function createArrayInstrumentations() {
        * 这样调用push时，为什么要将方法内部的 this 设置为当前的代理对象呢 ？
        * 因为 push 方法不止访问和设置 length，而且还会触发当前 push 的索引的 setter，比如现在 arr = reactive([obj])只有一个元素，那么
        * 我们 push 的时候就会实现 arr[1] = xxx 的操作，这是一个ADD操作，我们应该取出length相关联的 effect 并执行，而这一切都需要触发setter才行
-       * 因此需要将 this 调整为原始数组的代理对象，而我们需要的这个 this 在返回重写的 push 方法时就设置好了。如果在这里不用apply调用的话，就是原始数组调用
-       * [obj][1] = xxx ,这不会触发setter，也就不会将 length 相关的effect取出来执行
+       * 因此需要将 this 调整为原始数组的代理对象，而我们调用这个方法的时候是通过代理对象调用的，因此this指向的就是代理对象。如果在这里不用apply
+       * 调用的话，就是原始数组调用，[obj][1] = xxx ,这不会触发setter，也就不会将 length 相关的effect取出来执行
        */ 
       const res = (toRaw(this) as any)[key].apply(this, args)
       resetTracking()
@@ -235,9 +235,6 @@ const isNonTrackableKeys = /*#__PURE__*/ makeMap(`__proto__,__v_isRef,__isVue`)
 const builtInSymbols = new Set(
   /*#__PURE__*/
   Object.getOwnPropertyNames(Symbol)
-    // ios10.x Object.getOwnPropertyNames(Symbol) can enumerate 'arguments' and 'caller'
-    // but accessing them on Symbol leads to TypeError because Symbol is a strict mode
-    // function
     .filter(key => key !== 'arguments' && key !== 'caller')
     .map(key => (Symbol as any)[key])
     .filter(isSymbol)

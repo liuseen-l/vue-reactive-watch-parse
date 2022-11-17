@@ -1,27 +1,21 @@
 // 判断传入的数据是否为对象类型
 export const isObject = (val: unknown): val is Record<any, any> => val !== null && typeof val === 'object'
 
-
 // 判断是否是一个函数
 export const isFunction = (val: unknown): val is Function => typeof val === 'function'
-
 
 // computed要用
 export const NOOP = () => { }
 
-
 // 判断数组
 export const isArray = Array.isArray
-
 
 // 判断Map
 export const isMap = (val: unknown): val is Map<any, any> => toTypeString(val) === '[object Map]'
 export const objectToString = Object.prototype.toString
 export const toTypeString = (value: unknown): string => objectToString.call(value)
 
-
 export const extend = Object.assign
-
 
 // 判断当前访问的key是否是target自身的属性
 const hasOwnProperty = Object.prototype.hasOwnProperty
@@ -46,3 +40,9 @@ export const toNumber = (val: any): any => {
 }
 
 export const isSymbol = (val: unknown): val is symbol => typeof val === 'symbol'
+
+
+export const toRawType = (value: unknown): string => {
+  // extract "RawType" from strings like "[object RawType]"
+  return toTypeString(value).slice(8, -1)
+}

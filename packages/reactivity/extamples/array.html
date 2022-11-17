@@ -11,13 +11,12 @@
       const { effect, reactive, readonly } = VueReactivity;
       const obj = {};
       const arr = reactive([obj]);
-      effect(()=>{
+      effect(() => {
         for (const key in arr) {
           console.log(key);
         }
-      })
-      arr.push('da')
-
+      });
+      arr.push(reactive({ d: 1 }));
     </script>
   </body>
 </html>

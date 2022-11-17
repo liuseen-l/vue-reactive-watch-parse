@@ -106,7 +106,7 @@ export function isTracking() {
 // 追踪 一个属性对应多个effect 多个属性对应一个effect
 export function track(target: object, key: unknown, type?: TrackOpTypes) {
   // 判断这个 state.name 访问属性的操作是不是在 effect 中执行的，简单来说就是判断需不需要收集
-  if (!isTracking() || !shouldTrack ) { //如果这个属性不依赖于 effect 直接跳出
+  if (!isTracking() || !shouldTrack) { //如果这个属性不依赖于 effect 直接跳出
     return
   }
   // 根据 target 从 '桶' 当中取得depsMap ,他是一个 Map 类型: key -> effetcs
@@ -153,7 +153,7 @@ export function trackEffects(dep: Dep) {
  * @param newValue  { unknown }  用于修改 arr.length = xxx 的时候，此时的 key == 'length' 而 newValue 就是修改的长度的值 
  * @returns 
  */
-export function trigger(target: Target, key?: string | number | symbol, type?: TriggerOpTypes, newValue?: unknown) {
+export function trigger(target: object, key?: unknown, type?: TriggerOpTypes, newValue?: unknown) {
   // 设置新的值以后，取出当前target所对应的大桶
   const depsMap = targetMap.get(target)
 
@@ -173,7 +173,8 @@ export function trigger(target: Target, key?: string | number | symbol, type?: T
     })
   } else {
     // 执行 target key 的副作用函数
-    if (key !== void 0) { // 这里有个问题,就是当前trigger是由于增添属性触发的时候,这里 target key 会获取到undefined
+    if (key !== void 0) {
+      // 这里有个问题,就是当前trigger是由于增添属性触发的时候,这里 target key 会获取到 undefined，set在删除属性这里也会拿到undefined，因为set没有get方法，因此没有元素和effect建立依赖关系
       deps.push(depsMap.get(key))
     }
 
@@ -264,3 +265,6 @@ export interface ReactiveEffectRunner<T = any> {
   (): T
   effect: ReactiveEffect
 }
+
+
+
