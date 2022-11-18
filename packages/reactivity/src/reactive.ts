@@ -161,5 +161,22 @@ export const toReactive = <T extends unknown>(value: T): T =>
   isObject(value) ? reactive(value as object) : value
 
 
-  export const toReadonly = <T extends unknown>(value: T): T =>
+export const toReadonly = <T extends unknown>(value: T): T =>
   isObject(value) ? readonly(value as Record<any, any>) : value
+
+
+export function isReadonly(value: unknown): boolean {
+  return !!(value && (value as Target)[ReactiveFlags.IS_READONLY])
+}
+
+export function isShallow(value: unknown): boolean {
+  return !!(value && (value as Target)[ReactiveFlags.IS_SHALLOW])
+}
+
+export function isReactive(value: unknown): boolean {
+  if (isReadonly(value)) {
+    // readonly(reactive(obj))
+    return isReactive((value as Target)[ReactiveFlags.RAW])
+  }
+  return !!(value && (value as Target)[ReactiveFlags.IS_REACTIVE])
+}

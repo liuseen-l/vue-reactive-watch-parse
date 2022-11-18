@@ -1,9 +1,10 @@
-import { reactive, ReactiveFlags, readonly, Target, toRaw } from './reactive'
+import { isReadonly, isShallow, reactive, ReactiveFlags, readonly, Target, toRaw } from './reactive'
 import { ITERATE_KEY, pauseTracking, resetTracking, track, trigger } from './effect'
 import { extend, hasChanged, hasOwn, isArray, isIntegerKey, isObject, isSymbol } from '@vue/shared'
 import { TrackOpTypes, TriggerOpTypes } from './operations'
 import { warn } from './warning'
 import { makeMap } from './makeMap'
+import { isRef } from './ref'
 
 
 const arrayInstrumentations = createArrayInstrumentations()
@@ -40,7 +41,7 @@ function createArrayInstrumentations() {
         return res
       }
     }
-  });                                                      
+  });
 
   (['push', 'pop', 'shift', 'unshift', 'splice'] as const).forEach(key => {
     instrumentations[key] = function (this: unknown[], ...args: unknown[]) {
@@ -53,7 +54,7 @@ function createArrayInstrumentations() {
        * 我们 push 的时候就会实现 arr[1] = xxx 的操作，这是一个ADD操作，我们应该取出length相关联的 effect 并执行，而这一切都需要触发setter才行
        * 因此需要将 this 调整为原始数组的代理对象，而我们调用这个方法的时候是通过代理对象调用的，因此this指向的就是代理对象。如果在这里不用apply
        * 调用的话，就是原始数组调用，[obj][1] = xxx ,这不会触发setter，也就不会将 length 相关的effect取出来执行
-       */ 
+       */
       const res = (toRaw(this) as any)[key].apply(this, args)
       resetTracking()
       return res
@@ -116,9 +117,28 @@ function createGetter(isReadonly = false, shallow = false) {
 }
 
 function createSetter(shallow = false) {
-  return function set(target: object, key: string | symbol, value: unknown, receiver: object) { // receiver是代理对象的本身
+  return function set(target: object, key: string | symbol, value: unknown, receiver: object): boolean { // receiver是代理对象的本身
     // 拿到旧值,便于触发更新前的比较
     let oldValue = (target as any)[key]
+
+    if (isReadonly(oldValue) && isRef(oldValue) && !isRef(value)) {
+      return false
+    }
+
+    if (!shallow) {
+      if (!isShallow(value) && !isReadonly(value)) {
+        // 防止污染原始数据
+        oldValue = toRaw(oldValue)
+        value = toRaw(value)
+      }
+      if (!isArray(target) && isRef(oldValue) && !isRef(value)) {
+        oldValue.value = value
+        return true
+      }
+    } else {
+      // in shallow mode, objects are set as-is regardless of reactive or not
+    }
+
     /**
      *  # hadKey 这一步用来判断当前访问的key,是否是target自身的属性，如果是的话表示当前的set操作是修改数据，反之则是增添属性的操作
      * 

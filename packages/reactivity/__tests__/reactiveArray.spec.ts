@@ -1,4 +1,4 @@
-import { test, expect, describe} from 'vitest'
+import { test, expect, describe } from 'vitest'
 import { reactive, readonly, shallowReactive, shallowReadonly } from "../src/reactive";
 
 describe('reactiveArray', () => {
@@ -28,5 +28,6 @@ describe('reactiveArray', () => {
     expect(arr.includes(obj)).toBe(true)
   })
 
+ 
 
 })

@@ -3,37 +3,21 @@ import { effect } from '../src/effect';
 import { reactive, readonly, shallowReactive, shallowReadonly } from "../src/reactive";
 
 
+describe('reactiveMap', () => {
 
-
-
-describe('reactiveSet', () => {
-
-  test("Map增添操作", () => {
+  test("Map获取操作", () => {
     const obj = { a: 1 }
-    const set_ = new Set([obj]);
-    const set = reactive(set_);
+    const map_ = new Map([]);
+    const map = reactive(map_);
     let count = 0;
     effect(() => {
-      set.size
+      map.get(obj)
       count++
     })
-    set.add({ a: 1 })
+    map.set(obj, 1)
     expect(count).toBe(2)
   })
 
-
-  test("Map删除操作", () => {
-    const obj = { a: 1 }
-    const set_ = new Set([obj]);
-    const set = reactive(set_);
-    let count = 0;
-    effect(() => {
-      set.size
-      count++
-    })
-    set.delete(obj)
-    expect(count).toBe(2)
-  })
 
 
 })

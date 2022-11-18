@@ -304,6 +304,31 @@ describe('reactive', () => {
     state_array.length = 0
     expect(count).toBe(5)
   })
+  
+  test("避免污染数组的原始数据", () => {
+    const originalArr = [];
+    const arr = reactive(originalArr);
+    arr[0] = reactive([1]);
+    let count =0;
+    effect(() => {
+      originalArr[0].length;
+      count++
+    });
+    originalArr[0].push(1);
+    expect(count).toBe(1)
+  })
 
-
+  // shallowReactive 设置值的时候不会进行toRaw操作
+  test("shallowReactive可以(避免污染数组的原始数据)", () => {
+    const originalArr = [];
+    const arr = shallowReactive(originalArr);
+    arr[0] = shallowReactive([1]);
+    let count =0;
+    effect(() => {
+      originalArr[0].length;
+      count++
+    });
+    originalArr[0].push(1);
+    expect(count).toBe(2)
+  })
 })
