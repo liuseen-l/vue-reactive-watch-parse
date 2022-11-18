@@ -9,6 +9,14 @@ import { isRef } from './ref'
 
 const arrayInstrumentations = createArrayInstrumentations()
 
+function hasOwnProperty(key: string) {
+  // 拿到原始对象
+  const obj = toRaw(this)
+  track(obj, key, TrackOpTypes.HAS)
+  return obj.hasOwnProperty(key)
+}
+
+
 function createArrayInstrumentations() {
   const instrumentations: Record<string, Function> = {};
 
@@ -85,11 +93,15 @@ function createGetter(isReadonly = false, shallow = false) {
      * 首先判断当前的target是否是由 readonly(['foo']) 代理的，如果是 true 这个时候其实走正常逻辑就可以，不需要拦截，因为设置为只读
      * hasOwn(arrayInstrumentations, key) 判断当前的 key 所对应的数组方法是否在重写序列中
      *  */
-    if (!isReadonly && targetIsArray && hasOwn(arrayInstrumentations, key)) {
+    if (!isReadonly) {
       // recevier 是数组的代理，这里放回重写的方法，并将方法当中的 this 改为 recevier
-      return Reflect.get(arrayInstrumentations, key, receiver)
+      if (targetIsArray && hasOwn(arrayInstrumentations, key)) {
+        return Reflect.get(arrayInstrumentations, key, receiver)
+      }
+      if (key === 'hasOwnProperty') {
+        return hasOwnProperty
+      }
     }
-
     const res = Reflect.get(target, key, receiver)
 
     // 因为for of 数组的时候，会访问Symbol.iterator，为了不让他和effect建立依赖关系，需要进行判断，并直接返回res
