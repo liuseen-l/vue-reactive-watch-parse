@@ -16,6 +16,11 @@ import { isArray, extend, isMap, isIntegerKey, toNumber } from '@vue/shared'
  * 
  * 用栈来处理，存储正确的关系
  */
+
+let effectDeep = 0;
+export let effectDeepStack: Array<ReactiveEffect>[] | null = []
+
+
 let effectStack: ReactiveEffect[] = []
 export let activeEffect: ReactiveEffect | undefined
 
@@ -35,6 +40,15 @@ export function resetTracking() {
   shouldTrack = last === undefined ? true : last
 }
 
+
+function cleanupChildrenEffect(effect: ReactiveEffect) {
+  // 当前触发父effect重新执行，这意味着内层的effect都会执行一遍，为了防止收集重复的依赖，那么可以在这里将内层依赖进行递归清空（下一层）依赖清空  
+  for (let i = 0; i < effect.childEffects.length; i++) {
+    cleanupEffect(effect.childEffects[i])
+    effect.childEffects.shift()
+  }
+}
+
 function cleanupEffect(effect: ReactiveEffect) {
   // deps 是当前副作用函数身上的一个属性，这个属性中存储了那些object.key收集了当前effect所对应的set集合
   const { deps } = effect // deps -> [set,set]
@@ -45,13 +59,17 @@ function cleanupEffect(effect: ReactiveEffect) {
     }
     deps.length = 0
   }
+
+  if (effect.childEffects.length > 0) {
+    cleanupChildrenEffect(effect)
+  }
 }
 
 export class ReactiveEffect<T = any> {
   active = true
   deps: Dep[] = [] // 让 effect 记录他依赖了哪些属性，同时要记录当前属性依赖了哪个effect 
   parent: ReactiveEffect | undefined = undefined
-
+  childEffects: ReactiveEffect[] = []
   constructor(
     public fn: () => T,
     public scheduler: any | null = null,
@@ -74,14 +92,46 @@ export class ReactiveEffect<T = any> {
 
     if (!effectStack.includes(this)) { // 屏蔽同一个effect会多次执行 
       try {
+
+        /**
+         * 执行传入给 effect 的 fn 函数的时候
+         * 将当前的 effect 保存在当前深度，开始深度为0
+         *  */
+        if (!effectDeepStack[effectDeep]) {
+          effectDeepStack[effectDeep] = <ReactiveEffect[]>[]
+          effectDeepStack[effectDeep].push(this)
+        } else {
+          effectDeepStack[effectDeep].push(this)
+        }
+
         // 激活状态的话，需要建立属性和依赖的关系
         cleanupEffect(this) // 清空分支切换时遗留的副作用函数
         activeEffect = this;
         effectStack.push(activeEffect)
+
+        // 每次执行一次 effect 当中的 fn 意味着深度加1
+
+        effectDeep++
         return this.fn(); // 访问data的属性，触发getter （依赖收集）
       } finally {
+        // effect 当中的 fn 执行完毕之后深度减1
+        effectDeep--
+        // 防止下标越界 
+        if (effectDeep > 0) {
+          for (let i = 0; i < effectDeepStack[effectDeep].length; i++) {
+            // 将下一层的effect保存在当前effect的child
+            effectDeepStack[effectDeep - 1][0].childEffects.push(effectDeepStack[effectDeep].pop())
+          }
+        }
+
         effectStack.pop() // 嵌套副作用函数执行完毕以后将最里层的副作用函数pop出去
+
         activeEffect = effectStack[effectStack.length - 1]
+
+        //当最外层的effect执行完毕之后，将 effectDeepStack 清空
+        if (!activeEffect)
+          effectDeepStack.length = 0
+        // console.log(effectDeepStack);
       }
     }
   }
@@ -241,10 +291,22 @@ export function triggerEffects(dep: Dep | ReactiveEffect[]) {
   }
 }
 
+
+
 // 副作用函数的构造函数
 export function effect<T = any>(fn: () => T, options?: any) {
 
+  // 检查当前的深度
+  /**
+   * 最外层的深度为0
+   * 最外层执行完毕之后深度为1，那么在深度为1所执行的所有effect,都应该被存储到最外层的childEffects当中
+   * 
+   * 
+   */
+
   const _effect = new ReactiveEffect(fn) // 这里导致嵌套函数有问题
+
+
 
   //合并
   if (options) {

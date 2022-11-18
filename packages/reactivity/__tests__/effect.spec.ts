@@ -55,7 +55,7 @@ describe('reactive', () => {
     expect(fnSpy2).toHaveBeenCalledTimes(3)
     state2.bar++
     expect(fnSpy1).toHaveBeenCalledTimes(3)
-    expect(fnSpy2).toHaveBeenCalledTimes(6)
+    expect(fnSpy2).toHaveBeenCalledTimes(4)
     // 期望应该变成4 但是变成了6，因为state2.bar 实际上收集了3个重复的依赖，但是由于是new出来，set无法去重
   })
 
@@ -98,6 +98,38 @@ describe('reactive', () => {
     6 infoo
       * 
     */
+  })
+
+
+  test('effect嵌套问题_3', () => {
+    const original = { foo: 1, bar: 1 }
+    const original2 = { bar: 1 }
+    const state = reactive(original)
+    const state2 = reactive(original2)
+    const fnSpy1 = vi.fn()
+    const fnSpy2 = vi.fn()
+    effect(() => {
+      state.foo
+      fnSpy1()
+      effect(() => {
+        state2.bar
+        effect(() => {
+          fnSpy2()
+        })
+        fnSpy2()
+      })
+      state.bar
+    })
+    state.foo++
+    expect(fnSpy1).toHaveBeenCalledTimes(2)
+    expect(fnSpy2).toHaveBeenCalledTimes(4)
+    state.bar++
+    expect(fnSpy1).toHaveBeenCalledTimes(3)
+    expect(fnSpy2).toHaveBeenCalledTimes(6)
+    state2.bar++
+    expect(fnSpy1).toHaveBeenCalledTimes(3)
+    expect(fnSpy2).toHaveBeenCalledTimes(8)
+    // 期望应该变成4 但是变成了6，因为state2.bar 实际上收集了3个重复的依赖，但是由于是new出来，set无法去重
   })
 
   /**
@@ -331,5 +363,37 @@ describe('reactive', () => {
     });
     originalArr[0].push(1);
     expect(fnSpy).toHaveBeenCalledTimes(2)
+  })
+
+  test("内存泄漏", () => {
+    const original = { foo: 1, bar: 1 }
+    const original2 = { bar: 1 }
+    const state = reactive(original)
+    const state2 = reactive(original2)
+    const fnSpy1 = vi.fn()
+    const fnSpy2 = vi.fn()
+    effect(() => {
+      state.foo
+      fnSpy1()
+      // console.log(state.foo + "foo");
+      effect(() => {
+        // 外层函数重新执行副作用函数间接执行里面这个副作用函数的时候有问题，又new ReactiveEffect(fn)实例，导致target.key始终存储着之前的effect
+        // 发现源码也有这个问题
+        // console.log(state2.bar + "infoo");
+        state2.bar
+        fnSpy2()
+      })
+      state.bar
+      // console.log(state.bar + "bar");
+    })
+    state.foo++
+    expect(fnSpy1).toHaveBeenCalledTimes(2)
+    expect(fnSpy2).toHaveBeenCalledTimes(2)
+    state.bar++
+    expect(fnSpy1).toHaveBeenCalledTimes(3)
+    expect(fnSpy2).toHaveBeenCalledTimes(3)
+    state2.bar++
+    expect(fnSpy1).toHaveBeenCalledTimes(3)
+    expect(fnSpy2).toHaveBeenCalledTimes(4)
   })
 })
