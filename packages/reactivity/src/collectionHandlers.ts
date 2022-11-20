@@ -267,7 +267,7 @@ function createForEach(isReadonly: boolean, isShallow: boolean) {
      *       出于严谨性，我们还需要做一些补充。因为 forEach 函数除了接收 callback 作为参数之外，它还接收第二个参数，该参数可以用来指定 callback 函数执行时的 this 值。
      */
     return target.forEach((value: unknown, key: unknown) => {
-      // 这里将 value 用 wrap 包裹，相当于说 get了某一个值，然后对象我们需要进行 wrap 包装
+      // 这里将 value 用 wrap 包裹，相当于说 get了某一个值，然后对象我们需要进行 wrap 包装,同时由于是 Map,因此 key 可以是一个对象,因此也需要包裹成为响应式
       return callback.call(thisArg, wrap(value), wrap(key), observed)
     })
   }
@@ -291,8 +291,6 @@ function createIterableMethod(
   isReadonly: boolean,
   isShallow: boolean
 ) {
-
-
   // 这里迭代器和 forEach 差不多,我们也需要将 value 包裹一下成为依赖,确保在 effect 中访问这些 value 身上的属性时,能够和当前的 effect 产生依赖关系
   return function (this: IterableCollections, ...args: unknown[]): Iterable & Iterator {
     // 此时的 target 是代理对象,首先获取原始对象
@@ -301,28 +299,65 @@ function createIterableMethod(
     const rawTarget = toRaw(target)
     // 判断最原始对象是否为 Map,因为这里可能是 Set 集合
     const targetIsMap = isMap(rawTarget)
-    // 
+    // 遍历 map fro...of
     const isPair = method === 'entries' || (method === Symbol.iterator && targetIsMap)
-
+    // 遍历 map for...in
     const isKeyOnly = method === 'keys' && targetIsMap
-
+    // 拿到原始对象的这些方法后,进行调用: 'keys' | 'values' | 'entries' | Symbol.iterator  
     const innerIterator = target[method](...args)
 
     const wrap = isShallow ? toShallow : isReadonly ? toReadonly : toReactive
 
+    // 根据当前的 isKeyOnly 区分 Map 和 Set 的全局 Symbol 值
+    /**
+     *  const p = reactive(new Map([
+     *    ['key1', 'value1'],
+     *    ['key2', 'value2']
+     * ]))
+     * effect(() => {
+     *      for (const value of p.keys()) {
+     *         console.log(value) // key1 key2
+     *      }
+     * })
+     * 
+     * p.set('key2', 'value3') // 这是一个 SET 类型的操作，它修改了 key2 的值
+     * 
+     * 为了避免这种不必要的更新触发发生,我们用另一个 Symbol 值来收集 for...of map 的 keys 依赖
+     * 这样在进行 ADD 或者 DELETE 操作的时候,不仅仅需要执行 ITERATE_KEY 的依赖,还要执行 MAP_KEY_ITERATE_KEY 的依赖
+     */
     !isReadonly && track(rawTarget, isKeyOnly ? MAP_KEY_ITERATE_KEY : ITERATE_KEY, TrackOpTypes.ITERATE)
 
     return {
       next() {
+        // 调用原始对象的 next 方法,拿到 value 和 done 值 
         const { value, done } = innerIterator.next()
-        return done
-          ? { value, done }
-          : {
+        return done // 如果为真,说明遍历完毕
+          ? { value, done } // 返回 value 和 done 值 {value: undefined,done: true}
+          : { // 没有遍历完 , 判断当前原始对象是否为 map ,并且触发的是entries方法或者Symbol.iterator方法, 来确定 value 的返回类型 , 这里通forEach一样,也需要对 key 和 value 进行包裹
+              // entries | Symbol.iterator && Map 第一个,values | keys | Symbol.iterator && Set 第二个
             value: isPair ? [wrap(value[0]), wrap(value[1])] : wrap(value),
             done
           }
       },
+      /**
+       * 为什么需要加 [Symbol.iterator] 这个属性,我们知道对于 Map 来说,map.entries === map[Symbol.iterator]
+       * p 需要符合可迭代协议,即实现 Symbol.iterator 方法,我们重写了这个方法,for...of 执行的时候会访问代理对象,p[Symbol.itrator] 触发getter,这里是ok的
+       * 但是我们 for(const [key,value] of p.entires() ) 的时候会报错,很显然我们返回的是 {next()} 这个对象,这个对象只是符合了迭代器协议,因为包含next方法,但是不是可迭代协议
+       * 
+       * for(const [key,value] of p){ 
+       *      console.log(key,value)
+       *  }
+       * 
+       *  因此我们加上 [Symbol.iterator],使之符合可迭代协议
+       *  [Symbol.iterator]() {
+       *      因为调用 for...of p.entries() 的时候,会访问返回对象的 [Symbol.iterator] 方法,我们在这里实现了
+       *      return this
+       *  }
+       *        
+       *          
+       */
       [Symbol.iterator]() {
+        // 这里的 this 指向对象本身,即 return 的这个对象本身
         return this
       }
     }
