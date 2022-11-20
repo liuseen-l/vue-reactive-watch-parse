@@ -63,7 +63,12 @@ function createArrayInstrumentations() {
        * 因此需要将 this 调整为原始数组的代理对象，而我们调用这个方法的时候是通过代理对象调用的，因此this指向的就是代理对象。如果在这里不用apply
        * 调用的话，就是原始数组调用，[obj][1] = xxx ,这不会触发setter，也就不会将 length 相关的effect取出来执行
        */
+      console.log(args);
+      
+    
       const res = (toRaw(this) as any)[key].apply(this, args)
+   
+      
       resetTracking()
       return res
     }

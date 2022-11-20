@@ -14,6 +14,23 @@ const toShallow = <T extends unknown>(value: T): T => value
 
 const getProto = <T extends CollectionTypes>(v: T): any => Reflect.getPrototypeOf(v)
 
+
+/**
+   *  对于普通对象像这种嵌套情况很好处理，map set 这种集合就会麻烦一点
+   *  因为例如
+   *        const state = readonly(reactive(obj)) , 我们在state.xxx 的时候，会触发getter ，内部调用 
+   *        const res = Reflect.get(target, key, receiver) 此时的 target 是 reactive(obj)，执行这行代码的时候，会触发 target 的getter，因为当前 isReadonly 是 true，不会 track
+   *        const res = Reflect.get(target, key, receiver) 这里的 target 才是真正的 obj,由于这里的 isReadonly 是 false，然后在这里我们才进行了track 
+   *  
+   * 而对于 Map 来说，获取一个值其实要操作两步，首先是 get 拿到方法，然后调用 get 才能拿到值，因此不能像对象那样直接 .xxx 就可以，不能自行递归，因此需要我们手动操作
+   *      # 看上去很麻烦，其实我们只要明确目的实现起来并不困难，对于readonly(reactive(new Map([ ['xxx',reavtive(obj)] ]))) 这样的嵌套响应式
+   *        我们就是希望 reactive(map) 响应层的原始对象和当前effect建立依赖关系
+   *        
+   *       target = (target as any)[ReactiveFlags.RAW] // target拿到的是 reactive(map)
+   *       const rawTarget = toRaw(target)  // 拿到 map
+   *       track(rawTarget, key, TrackOpTypes.GET) // 这也是我们的目的，让原始对象和 effect 建立依赖关系
+   * 
+   */
 function get(
   target: MapTypes,
   key: unknown,
@@ -54,9 +71,19 @@ function get(
   if (has.call(rawTarget, key)) {
     // 根据 isShallow isReadonly 拿到具体的转换方法，如果是返回的数据类型是对象类型，需要进行转换包装 
     // 这里没有使用 rawTarget.get(key) 而是使用 target，readonly(reactive(Map)) ,此时的 target 是 reactive(Map),不会收集到重复的依赖，因为上方track实际上是用 rawTarget 去收集的
-     return wrap(target.get(key))
-  } 
+    return wrap(target.get(key))
+  }
   // 如果原始对象身上没有 key，需要考虑 key 的原始对象
+  /**
+   * 例如以下情况
+   *  const original = { a: 1 };
+   *   const obj = reactive(original);
+   *   const map = readonly(reactive(new Map([[original, obj["a"]]])));
+   *   effect(() => {
+   *     console.log(map.get(obj));
+   *   });
+   * 
+   */
   else if (has.call(rawTarget, rawKey)) {
     return wrap(target.get(rawKey))
   }
@@ -154,7 +181,7 @@ function set(this: MapTypes, key: unknown, value: unknown) {
   if (!hadKey) {
     key = toRaw(key)
     hadKey = has.call(target, key)
-  } 
+  }
 
   // 拿到原始值
   const oldValue = get.call(target, key)
@@ -205,18 +232,42 @@ function deleteEntry(this: CollectionTypes, key: unknown) {
 function createForEach(isReadonly: boolean, isShallow: boolean) {
   return function forEach(
     this: IterableCollections,
-    callback: Function,
+    callback: Function, // 传给 forEach 的函数
     thisArg?: unknown
   ) {
+    // map 的代理对象
     const observed = this as any
+    // 获取 map 的原始对象
     const target = observed[ReactiveFlags.RAW]
+    // 防止响应式嵌套，readonly(reactive(map)))
     const rawTarget = toRaw(target)
+    // 根据响应式类型拿到转换器
     const wrap = isShallow ? toShallow : isReadonly ? toReadonly : toReactive
+    // 如果不是只读的，我们需要收集依赖
     !isReadonly && track(rawTarget, ITERATE_KEY, TrackOpTypes.ITERATE)
+
+    // 调用原始对象的 forEach ， 然后再内部调用用户传入的真正的 callback 函数，我们再调用的时候为 value 和 key 都进行了 wrap 包装
+    /**
+     * 这样做的原因在于
+    *        const key = { key: 1 }
+     *       const value = new Set([1, 2, 3])
+     *       const p = reactive(new Map([
+     *            [key, value]
+     *       ]))
+     *       
+     *        effect(() => {
+        *         p.forEach(function (value, key) {
+        *              console.log(value.size) // 3
+     *            })
+     *        })
+     *       
+     *        p.get(key).delete(1)
+     * 
+     *       reactive 是深层次的响应式，因此传入的value也应该是响应式的，这样在访问 value.size 的时候才能和 effect 建立依赖关系
+     *       出于严谨性，我们还需要做一些补充。因为 forEach 函数除了接收 callback 作为参数之外，它还接收第二个参数，该参数可以用来指定 callback 函数执行时的 this 值。
+     */
     return target.forEach((value: unknown, key: unknown) => {
-      // important: make sure the callback is
-      // 1. invoked with the reactive map as `this` and 3rd arg
-      // 2. the value received should be a corresponding reactive/readonly.
+      // 这里将 value 用 wrap 包裹，相当于说 get了某一个值，然后对象我们需要进行 wrap 包装
       return callback.call(thisArg, wrap(value), wrap(key), observed)
     })
   }
@@ -241,25 +292,27 @@ function createIterableMethod(
   isShallow: boolean
 ) {
 
+
+  // 这里迭代器和 forEach 差不多,我们也需要将 value 包裹一下成为依赖,确保在 effect 中访问这些 value 身上的属性时,能够和当前的 effect 产生依赖关系
   return function (this: IterableCollections, ...args: unknown[]): Iterable & Iterator {
+    // 此时的 target 是代理对象,首先获取原始对象
     const target = (this as any)[ReactiveFlags.RAW]
+    // 防止嵌套响应式 readonly(reactive(map))
     const rawTarget = toRaw(target)
+    // 判断最原始对象是否为 Map,因为这里可能是 Set 集合
     const targetIsMap = isMap(rawTarget)
-    const isPair =
-      method === 'entries' || (method === Symbol.iterator && targetIsMap)
+    // 
+    const isPair = method === 'entries' || (method === Symbol.iterator && targetIsMap)
+
     const isKeyOnly = method === 'keys' && targetIsMap
+
     const innerIterator = target[method](...args)
+
     const wrap = isShallow ? toShallow : isReadonly ? toReadonly : toReactive
-    !isReadonly &&
-      track(
-        rawTarget,
-        isKeyOnly ? MAP_KEY_ITERATE_KEY : ITERATE_KEY,
-        TrackOpTypes.ITERATE
-      )
-    // return a wrapped iterator which returns observed versions of the
-    // values emitted from the real iterator
+
+    !isReadonly && track(rawTarget, isKeyOnly ? MAP_KEY_ITERATE_KEY : ITERATE_KEY, TrackOpTypes.ITERATE)
+
     return {
-      // iterator protocol
       next() {
         const { value, done } = innerIterator.next()
         return done
@@ -269,7 +322,6 @@ function createIterableMethod(
             done
           }
       },
-      // iterable protocol
       [Symbol.iterator]() {
         return this
       }
@@ -298,7 +350,24 @@ function createInstrumentations() {
     delete: deleteEntry, // Set Map
     forEach: createForEach(false, false)
   }
-
+  /**
+   * 
+   * 一个对象能否迭代，取决于该对象是否实现了迭代协议，如果一个对象正确地实现了 Symbol.iterator 方法，那么它就是可迭代的。很显然，代理对象 p 没有实现 Symbol.iterator 方法
+   * 
+   * 但实际上，当我们使用 for...of 循环迭代一个代理对象时，内部会试图从代理对象 p 上读取 p[Symbol.iterator] 属性，这个操作会触发 get 拦截函数
+   * const p = reactive(new Map([
+   *     ['key1', 'value1'],
+   *     ['key2', 'value2']
+   *  ]))
+   *
+   * effect(() => {
+   *    // TypeError: p is not iterable
+   *    for (const [key, value] of p) {
+   *        console.log(key, value)
+   *    }
+   * })
+   * 
+   */
   const iteratorMethods = ['keys', 'values', 'entries', Symbol.iterator]
 
   iteratorMethods.forEach(method => {
