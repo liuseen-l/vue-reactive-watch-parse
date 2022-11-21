@@ -1,6 +1,6 @@
 import { isObject, toRawType } from '@vue/shared'
 import { mutableHandlers, readonlyHandlers, shallowReactiveHandlers, shallowReadonlyHandlers } from './baseHandlers'
-import { mutableCollectionHandlers, } from './collectionHandlers';
+import { mutableCollectionHandlers, readonlyCollectionHandlers, shallowCollectionHandlers, shallowReadonlyCollectionHandlers, } from './collectionHandlers';
 
 /**
  * 
@@ -96,7 +96,7 @@ export function shallowReactive<T extends object>(target: T): ShallowReactive<T>
     target,
     false,
     shallowReactiveHandlers,
-    mutableCollectionHandlers,
+    shallowCollectionHandlers,
     shallowReactiveMap
   )
 }
@@ -116,7 +116,7 @@ export function readonly<T extends object>(target: T) {
     target,
     true,
     readonlyHandlers,
-    mutableCollectionHandlers,
+    readonlyCollectionHandlers,
     readonlyMap
   )
 }
@@ -126,7 +126,7 @@ export function shallowReadonly<T extends object>(target: T): Readonly<T> {
     target,
     true,
     shallowReadonlyHandlers,
-    mutableCollectionHandlers,
+    shallowReadonlyCollectionHandlers,
     shallowReadonlyMap
   )
 }

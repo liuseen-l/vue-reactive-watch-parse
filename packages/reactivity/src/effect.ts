@@ -232,7 +232,7 @@ export function trigger(target: object, key?: unknown, type?: TriggerOpTypes, ne
         // 这里会进行不同的判断,因为保存增添操作所对应的副作用函数的标识符会根据数据类型不同而变化
         if (!isArray(target)) { // 如果增添属性的对象是普对对象,取出for in的副作用函数
           deps.push(depsMap.get(ITERATE_KEY))
-          if (isMap(target)) { // // 如果增添属性的对象是Map对象,取出Map所对应的for in副作用函数
+          if (isMap(target)) { // 如果增添属性的对象是Map对象,取出Map所对应的for...of keys()副作用函数
             deps.push(depsMap.get(MAP_KEY_ITERATE_KEY))
           }
         }
@@ -249,7 +249,7 @@ export function trigger(target: object, key?: unknown, type?: TriggerOpTypes, ne
       case TriggerOpTypes.DELETE:
         if (!isArray(target)) {
           deps.push(depsMap.get(ITERATE_KEY))
-          if (isMap(target)) {
+          if (isMap(target)) { // 如果删除属性的对象是Map对象,取出Map所对应的for...of keys()副作用函数
             deps.push(depsMap.get(MAP_KEY_ITERATE_KEY))
           }
         }

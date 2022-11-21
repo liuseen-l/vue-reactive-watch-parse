@@ -14,7 +14,6 @@ const toShallow = <T extends unknown>(value: T): T => value
 
 const getProto = <T extends CollectionTypes>(v: T): any => Reflect.getPrototypeOf(v)
 
-
 /**
    *  对于普通对象像这种嵌套情况很好处理，map set 这种集合就会麻烦一点
    *  因为例如
@@ -199,6 +198,26 @@ function set(this: MapTypes, key: unknown, value: unknown) {
   return this
 }
 
+
+function clear(this: IterableCollections) {
+  const target = toRaw(this)
+
+  const hadItems = target.size !== 0
+
+  // const oldTarget = true
+  //   ? isMap(target)
+  //     ? new Map(target)
+  //     : new Set(target)
+  //   : undefined
+
+  const result = target.clear()
+  if (hadItems) {
+    trigger(target, undefined, TriggerOpTypes.CLEAR, undefined)
+  }
+  return result
+}
+
+
 function deleteEntry(this: CollectionTypes, key: unknown) {
 
   // 还是先获取代理对象的原始集合
@@ -226,7 +245,6 @@ function deleteEntry(this: CollectionTypes, key: unknown) {
   }
   return result
 }
-
 
 
 function createForEach(isReadonly: boolean, isShallow: boolean) {
@@ -334,7 +352,7 @@ function createIterableMethod(
         return done // 如果为真,说明遍历完毕
           ? { value, done } // 返回 value 和 done 值 {value: undefined,done: true}
           : { // 没有遍历完 , 判断当前原始对象是否为 map ,并且触发的是entries方法或者Symbol.iterator方法, 来确定 value 的返回类型 , 这里通forEach一样,也需要对 key 和 value 进行包裹
-              // entries | Symbol.iterator && Map 第一个,values | keys | Symbol.iterator && Set 第二个
+            // entries | Symbol.iterator && Map 第一个,values | keys | Symbol.iterator && Set 第二个
             value: isPair ? [wrap(value[0]), wrap(value[1])] : wrap(value),
             done
           }
@@ -364,8 +382,23 @@ function createIterableMethod(
   }
 }
 
+function createReadonlyMethod(type: TriggerOpTypes): Function {
+  return function (this: CollectionTypes, ...args: unknown[]) {
+    // if (__DEV__) {
+    //   const key = args[0] ? `on key "${args[0]}" ` : ``
+    //   console.warn(
+    //     `${capitalize(type)} operation ${key}failed: target is readonly.`,
+    //     toRaw(this)
+    //   )
+    // }
+    return type === TriggerOpTypes.DELETE ? false : this
+  }
+}
+
 
 function createInstrumentations() {
+
+
   const mutableInstrumentations: Record<string, Function> = {
     get(this: MapTypes, key: unknown) { // Map
       // 此时的this是map的代理对象
@@ -385,6 +418,57 @@ function createInstrumentations() {
     delete: deleteEntry, // Set Map
     forEach: createForEach(false, false)
   }
+
+  const shallowInstrumentations: Record<string, Function> = {
+    get(this: MapTypes, key: unknown) {
+      return get(this, key, false, true)
+    },
+    get size() {
+      return size(this as unknown as IterableCollections)
+    },
+    has,
+    add,
+    set,
+    delete: deleteEntry,
+    clear,
+    forEach: createForEach(false, true)
+  }
+
+  const readonlyInstrumentations: Record<string, Function> = {
+    get(this: MapTypes, key: unknown) {
+      return get(this, key, true)
+    },
+    get size() {
+      return size(this as unknown as IterableCollections, true)
+    },
+    has(this: MapTypes, key: unknown) {
+      return has.call(this, key, true)
+    },
+    add: createReadonlyMethod(TriggerOpTypes.ADD),
+    set: createReadonlyMethod(TriggerOpTypes.SET),
+    delete: createReadonlyMethod(TriggerOpTypes.DELETE),
+    clear: createReadonlyMethod(TriggerOpTypes.CLEAR),
+    forEach: createForEach(true, false)
+  }
+
+  const shallowReadonlyInstrumentations: Record<string, Function> = {
+    get(this: MapTypes, key: unknown) {
+      return get(this, key, true, true)
+    },
+    get size() {
+      return size(this as unknown as IterableCollections, true)
+    },
+    has(this: MapTypes, key: unknown) {
+      return has.call(this, key, true)
+    },
+    add: createReadonlyMethod(TriggerOpTypes.ADD),
+    set: createReadonlyMethod(TriggerOpTypes.SET),
+    delete: createReadonlyMethod(TriggerOpTypes.DELETE),
+    clear: createReadonlyMethod(TriggerOpTypes.CLEAR),
+    forEach: createForEach(true, true)
+  }
+
+
   /**
    * 
    * 一个对象能否迭代，取决于该对象是否实现了迭代协议，如果一个对象正确地实现了 Symbol.iterator 方法，那么它就是可迭代的。很显然，代理对象 p 没有实现 Symbol.iterator 方法
@@ -412,19 +496,54 @@ function createInstrumentations() {
       false,
       false
     )
+
+    readonlyInstrumentations[method as string] = createIterableMethod(
+      method,
+      true,
+      false
+    )
+
+    shallowInstrumentations[method as string] = createIterableMethod(
+      method,
+      false,
+      true
+    )
+
+    shallowReadonlyInstrumentations[method as string] = createIterableMethod(
+      method,
+      true,
+      true
+    )
   })
+
+
   return [
     mutableInstrumentations,
+    readonlyInstrumentations,
+    shallowInstrumentations,
+    shallowReadonlyInstrumentations
   ]
 }
 
 const [
   mutableInstrumentations,
+  readonlyInstrumentations,
+  shallowInstrumentations,
+  shallowReadonlyInstrumentations
 ] = createInstrumentations()
 
 
+
+
+// handles 工厂函数
 function createInstrumentationGetter(isReadonly: boolean, shallow: boolean) {
-  const instrumentations = mutableInstrumentations
+  const instrumentations = shallow
+    ? isReadonly
+      ? shallowReadonlyInstrumentations
+      : shallowInstrumentations
+    : isReadonly
+      ? readonlyInstrumentations
+      : mutableInstrumentations
 
   // 这个函数是 proxy 当中的 get 函数，
   return (target: CollectionTypes, key: string | symbol, receiver: CollectionTypes) => {
@@ -442,6 +561,19 @@ function createInstrumentationGetter(isReadonly: boolean, shallow: boolean) {
 
 export const mutableCollectionHandlers: ProxyHandler<CollectionTypes> = {
   get: createInstrumentationGetter(false, false)
+}
+
+export const shallowCollectionHandlers: ProxyHandler<CollectionTypes> = {
+  get: createInstrumentationGetter(false, true)
+}
+
+export const readonlyCollectionHandlers: ProxyHandler<CollectionTypes> = {
+  get: createInstrumentationGetter(true, false)
+}
+
+export const shallowReadonlyCollectionHandlers: ProxyHandler<CollectionTypes> =
+{
+  get: createInstrumentationGetter(true, true)
 }
 
 function checkIdentityKeys(
