@@ -93,47 +93,51 @@ function get(
 }
 
 function has(this: CollectionTypes, key: unknown, isReadonly = false): boolean {
+  // 拿到原始对象
   const target = (this as any)[ReactiveFlags.RAW]
+  // 防止响应式嵌套 readonly(reactive(map))
   const rawTarget = toRaw(target)
+  // 拿到 key 的原始值  
   const rawKey = toRaw(key)
   if (!isReadonly) {
+    // 这里的处理方式和 get 的方式相同，不仅仅对 key 进行了依赖收集，而且对 rawKey 也进行了依赖收集
     if (key !== rawKey) {
-      track(rawTarget, key, TrackOpTypes.HAS,)
+      track(rawTarget, key, TrackOpTypes.HAS)
     }
-    track(rawTarget, rawKey, TrackOpTypes.HAS,)
+    track(rawTarget, rawKey, TrackOpTypes.HAS)
   }
-  return key === rawKey
-    ? target.has(key)
-    : target.has(key) || target.has(rawKey)
+  return key === rawKey ? target.has(key) : target.has(key) || target.has(rawKey)
 }
 
 function size(target: IterableCollections, isReadonly = false) {
   // 拿到代理对象的原始集合
   target = (target as any)[ReactiveFlags.RAW]
+  // readonly(reactive(Set))
+  const rawTarget = toRaw(target)
 
-  !isReadonly && track(toRaw(target), ITERATE_KEY, TrackOpTypes.ITERATE)
+  !isReadonly && track(rawTarget, ITERATE_KEY, TrackOpTypes.ITERATE)
   //  在这里我们将Reflect的第三个值更改为了target，即代理对象的原始集合，因为访问 Set 的 size 属性时，内部会将 S 赋值为this(当前size属性的调用者),然后调用S.[[SetData]]，
   //  如果第三个参数不传入原始集合的话，那么当前 proxy 身上是没有 [[SetData]] 这个内部方法的，因此会报错
   return Reflect.get(target, 'size', target)
 }
 
 
-// 新增元素
+// 新增元素，服务于 Set 集合
 function add(this: SetTypes, value: unknown) {
-  // 如果新增的元素是响应式对象，我们给他先处理一下，拿到他的原始对象，将原始对象添加进去
+  // 如果新增的元素是响应式对象，我们给他先处理一下，拿到他的原始对象，将原始对象添加进去，防止元数据污染
   value = toRaw(value)
-  // 还是拿到原始对象
-  const target = toRaw(this)
+  // 还是拿到原始对象 readonly(reactive(set))
+  const rawTarget = toRaw(this)
   // 获取原始对象的 has 方法
-  const { has } = getProto(target)
+  const { has } = getProto(rawTarget)
   // 判断当前的原始集合中是否含有这个元素，防止重复添加，虽然set有去重功能，但还是有性能的消耗
-  const hadKey = has.call(target, value)
+  const hadKey = has.call(rawTarget, value)
   // 如果没有
   if (!hadKey) {
     // 向原始集合中新增元素
-    target.add(value)
+    rawTarget.add(value)
     // 触发新增元素的trigger，可以将size绑定的副作用函数重新执行
-    trigger(target, value, TriggerOpTypes.ADD, value)
+    trigger(rawTarget, value, TriggerOpTypes.ADD, value)
   }
   return this
 }
@@ -168,31 +172,31 @@ function set(this: MapTypes, key: unknown, value: unknown) {
   // 获取新增元素的原始数据
   value = toRaw(value)
   // 确保代理的对象的原始 map 是真正的原始map
-  const target = toRaw(this)
+  const rawTarget = toRaw(this)
 
   // 获取原始map 的 has 和 get 方法
-  const { has, get } = getProto(target)
+  const { has, get } = getProto(rawTarget)
 
   // 判断当前原始map有没有这个key
-  let hadKey = has.call(target, key)
+  let hadKey = has.call(rawTarget, key)
 
   // Map -> reactive(key):value
   if (!hadKey) {
     key = toRaw(key)
-    hadKey = has.call(target, key)
+    hadKey = has.call(rawTarget, key)
   }
 
   // 拿到原始值
-  const oldValue = get.call(target, key)
+  const oldValue = get.call(rawTarget, key)
 
   // 设置值
-  target.set(key, value)
+  rawTarget.set(key, value)
 
   // 根据原来有没有这个key 判断当前的set 操作是新增数据还是修改数据
   if (!hadKey) {
-    trigger(target, key, TriggerOpTypes.ADD, value)
+    trigger(rawTarget, key, TriggerOpTypes.ADD, value)
   } else if (hasChanged(value, oldValue)) { // 在触发修改操作之前，判断一下新设置的值是否和原来的值是一样的 
-    trigger(target, key, TriggerOpTypes.SET, value)
+    trigger(rawTarget, key, TriggerOpTypes.SET, value)
   }
 
   return this
@@ -220,28 +224,29 @@ function clear(this: IterableCollections) {
 
 function deleteEntry(this: CollectionTypes, key: unknown) {
 
-  // 还是先获取代理对象的原始集合
-  const target = toRaw(this)
+  // 还是先获取代理对象的原始集合 readonly(reactive(Map | Set))
+  const rawTarget = toRaw(this)
   // 获取原始集合的 get 和 set 方法
-  const { has, get } = getProto(target)
+  const { has, get } = getProto(rawTarget)
   // 判断集合是否有当前这个值
-  let hadKey = has.call(target, key)
+  let hadKey = has.call(rawTarget, key)
   // 如果是 map.delete(map.get(obj))
-  // if (!hadKey) {
-  //   key = toRaw(key)
-  //   hadKey = has.call(target, key)
-  // }
+
+  if (!hadKey) {
+    key = toRaw(key)
+    hadKey = has.call(rawTarget, key)
+  }
 
   // 先判断是否能拿到 get 方法，因为set原始对象是没有 get 这个方法的，有 get 方法说明是 target 是 map，调用他的 get 方法获取值
-  const oldValue = get ? get.call(target, key) : undefined
+  const oldValue = get ? get.call(rawTarget, key) : undefined
 
   // 通过原始集合删除这个值（因为只有原始集合内部方法才有[[SetData]]） 
-  const result = target.delete(key)
+  const result = rawTarget.delete(key)
 
   // 如果有这个值再删除
   if (hadKey) {
     // 需要将 size 收集的依赖拿出来执行
-    trigger(target, key, TriggerOpTypes.DELETE, undefined)
+    trigger(rawTarget, key, TriggerOpTypes.DELETE, undefined)
   }
   return result
 }
@@ -261,7 +266,7 @@ function createForEach(isReadonly: boolean, isShallow: boolean) {
     const rawTarget = toRaw(target)
     // 根据响应式类型拿到转换器
     const wrap = isShallow ? toShallow : isReadonly ? toReadonly : toReactive
-    // 如果不是只读的，我们需要收集依赖
+    // 如果不是只读的，我们需要收集遍历的依赖
     !isReadonly && track(rawTarget, ITERATE_KEY, TrackOpTypes.ITERATE)
 
     // 调用原始对象的 forEach ， 然后再内部调用用户传入的真正的 callback 函数，我们再调用的时候为 value 和 key 都进行了 wrap 包装

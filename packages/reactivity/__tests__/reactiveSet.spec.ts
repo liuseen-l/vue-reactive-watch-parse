@@ -1,4 +1,4 @@
-import { test, expect, describe } from 'vitest'
+import { test, expect, describe, vi } from 'vitest'
 import { effect } from '../src/effect';
 import { reactive, readonly, shallowReactive, shallowReadonly } from "../src/reactive";
 
@@ -8,13 +8,13 @@ describe('reactiveSet', () => {
     const obj = { a: 1 }
     const set_ = new Set([obj]);
     const set = reactive(set_);
-    let count = 0;
+    const fnSpy = vi.fn()
     effect(() => {
       set.size
-      count++
+      fnSpy()
     })
     set.add({ a: 1 })
-    expect(count).toBe(2)
+    expect(fnSpy).toBeCalledTimes(2)
   })
 
 
@@ -22,13 +22,13 @@ describe('reactiveSet', () => {
     const obj = { a: 1 }
     const set_ = new Set([obj]);
     const set = reactive(set_);
-    let count = 0;
+    const fnSpy = vi.fn()
     effect(() => {
       set.size
-      count++
+      fnSpy()
     })
     set.delete(obj)
-    expect(count).toBe(2)
+    expect(fnSpy).toBeCalledTimes(2)
   })
 
 

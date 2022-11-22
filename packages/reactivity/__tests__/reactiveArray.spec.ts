@@ -1,4 +1,5 @@
-import { test, expect, describe } from 'vitest'
+import { test, expect, describe, vi } from 'vitest'
+import { effect } from '../src/effect';
 import { reactive, readonly, shallowReactive, shallowReadonly } from "../src/reactive";
 
 describe('reactiveArray', () => {
@@ -28,6 +29,21 @@ describe('reactiveArray', () => {
     expect(arr.includes(obj)).toBe(true)
   })
 
- 
+
+  test.only('数组fof...of 内部和索引建立依赖关系', () => {
+    const arr = [1, 2, 3, 4]
+    const p = reactive(arr)
+    const fnSpy = vi.fn()
+
+    effect(() => {
+      fnSpy()
+      for (const iterator of p) {
+      }
+    });
+
+    p[0] = 2
+    expect(fnSpy).toBeCalledTimes(2)
+  })
+
 
 })

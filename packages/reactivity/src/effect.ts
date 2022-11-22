@@ -24,7 +24,11 @@ import { isArray, extend, isMap, isIntegerKey, toNumber } from '@vue/shared'
 let effectStack: ReactiveEffect[] = []
 export let activeEffect: ReactiveEffect | undefined
 
+
+
 export const ITERATE_KEY = Symbol('iterate')
+// // * TODO: review 
+// export const ARR_VALUE_ITERATE_KEY = Symbol('iterate')
 export const MAP_KEY_ITERATE_KEY = Symbol('Map key iterate')
 
 export let shouldTrack = true
@@ -235,6 +239,7 @@ export function trigger(target: object, key?: unknown, type?: TriggerOpTypes, ne
           if (isMap(target)) { // 如果增添属性的对象是Map对象,取出Map所对应的for...of keys()副作用函数
             deps.push(depsMap.get(MAP_KEY_ITERATE_KEY))
           }
+
         }
         /**
          *  这里为什么还需要 isIntergerKey 去判断 key 是否为符合数组的索引类型?
@@ -252,6 +257,7 @@ export function trigger(target: object, key?: unknown, type?: TriggerOpTypes, ne
           if (isMap(target)) { // 如果删除属性的对象是Map对象,取出Map所对应的for...of keys()副作用函数
             deps.push(depsMap.get(MAP_KEY_ITERATE_KEY))
           }
+
         }
         break
       case TriggerOpTypes.SET:

@@ -1,10 +1,11 @@
-import { isReadonly, isShallow, reactive, ReactiveFlags, readonly, Target, toRaw } from './reactive'
+import { isReadonly, isShallow, reactive, ReactiveFlags, readonly, Target, toRaw, toReactive, toReadonly } from './reactive'
 import { ITERATE_KEY, pauseTracking, resetTracking, track, trigger } from './effect'
 import { extend, hasChanged, hasOwn, isArray, isIntegerKey, isObject, isSymbol } from '@vue/shared'
 import { TrackOpTypes, TriggerOpTypes } from './operations'
 import { warn } from './warning'
 import { makeMap } from './makeMap'
 import { isRef } from './ref'
+import { toShallow } from './collectionHandlers'
 
 
 const arrayInstrumentations = createArrayInstrumentations()
@@ -18,7 +19,9 @@ function hasOwnProperty(key: string) {
 
 
 function createArrayInstrumentations() {
-  const instrumentations: Record<string, Function> = {};
+  const instrumentations: Record<string | symbol, Function> = {};
+
+
 
   (['includes', 'indexOf', 'lastIndexOf'] as const).forEach(key => {
 
@@ -63,12 +66,12 @@ function createArrayInstrumentations() {
        * 因此需要将 this 调整为原始数组的代理对象，而我们调用这个方法的时候是通过代理对象调用的，因此this指向的就是代理对象。如果在这里不用apply
        * 调用的话，就是原始数组调用，[obj][1] = xxx ,这不会触发setter，也就不会将 length 相关的effect取出来执行
        */
-      console.log(args);
-      
-    
-      const res = (toRaw(this) as any)[key].apply(this, args)
-   
-      
+
+      // readonly(reactive(arr))
+      const rawTarget = toRaw(this) as any
+
+      const res = rawTarget[key].apply(this, args)
+
       resetTracking()
       return res
     }
