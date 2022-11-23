@@ -92,6 +92,7 @@ function get(
   }
 }
 
+
 function has(this: CollectionTypes, key: unknown, isReadonly = false): boolean {
   // 拿到原始对象
   const target = (this as any)[ReactiveFlags.RAW]
@@ -106,6 +107,8 @@ function has(this: CollectionTypes, key: unknown, isReadonly = false): boolean {
     }
     track(rawTarget, rawKey, TrackOpTypes.HAS)
   }
+
+  // const map = reactive(new Map([ [reactive(obj),1] ]))。此时 target 是原始对象 ，key 是 reactive(obj)，rawkey 是 obj，走第二个，因为我们收集依赖的时候不仅仅是对 key 收集了依赖，还对 rawKey 收集了依赖
   return key === rawKey ? target.has(key) : target.has(key) || target.has(rawKey)
 }
 
