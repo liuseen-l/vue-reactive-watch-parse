@@ -27,7 +27,7 @@ describe('reactiveMap', () => {
       map.get(obj);
       fnSpy()
     });
-    //  如果不收集原始 rawKey 这里不会触发
+    //  如果不收集原始 rawKey 这里是不会触发更新的
     map.set(original, 2)
 
     expect(fnSpy).toBeCalledTimes(2)
