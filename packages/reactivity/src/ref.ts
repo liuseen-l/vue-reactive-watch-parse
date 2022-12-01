@@ -4,6 +4,27 @@ import { isReadonly, isShallow, reactive, toRaw, toReactive } from './reactive'
 import { activeEffect, isTracking, shouldTrack, trackEffects, triggerEffects } from './effect'
 import { TrackOpTypes, TriggerOpTypes } from './operations'
 
+declare const RefSymbol: unique symbol
+export interface Ref<T = any> {
+  value: T
+  [RefSymbol]: true
+}
+
+export function isRef<T>(r: Ref<T> | unknown): r is Ref<T>
+// 如果传入ref的对象，已经是 ref 的实例
+export function isRef(r: any): r is Ref {
+  return !!(r && r.__v_isRef === true)
+}
+
+declare const ShallowRefMarker: unique symbol
+export type ShallowRef<T = any> = Ref<T> & { [ShallowRefMarker]?: true }
+
+type RefBase<T> = {
+  dep?: Dep
+  value: T
+}
+
+
 // ref入口函数
 export function ref(value?: unknown) {
   // 内部调用 createRef 函数，尾调用优化
@@ -66,9 +87,24 @@ class RefImpl<T> {
 
   // 在这里，无论是ref还是shallowRef的实例对象，都是同样的方式进行存储
   set value(newVal) {
-
-    const useDirectValue =
-      this.__v_isShallow || isShallow(newVal) || isReadonly(newVal)
+    /**
+     * 判断是否将传入的 newValue值 直接设置为当前 ref 的 value 值，为以下三种类型的话就直接设置为当前实例的 value 值
+     *  1.当前为 shallowRef 实例
+     *  2.当前为 ref 实例，但是传入的值是 shallow 类型
+     *  3.当前为 ref 实例，但是传入的值是 readonly 类型
+     *  
+     * 对于情况一是很好理解的，因为当前为 shallowRef 实例的话只需要劫持最外层的响应式，但是如果 newValue 本身就是响应式的时候，这个时候也会是深层次的相应，但是这种响应并不是由 shallowRef 建立的
+     * 
+     * 对于情况二来说，ref 是深层次的响应，但是传入的值是浅层次的响应
+     * 
+     * 
+     * 
+     * 
+     * 
+     * 
+     * 
+     *  */ 
+    const useDirectValue = this.__v_isShallow || isShallow(newVal) || isReadonly(newVal)
     newVal = useDirectValue ? newVal : toRaw(newVal)
     if (hasChanged(newVal, this._rawValue)) {
       this._rawValue = newVal
@@ -85,34 +121,26 @@ class RefImpl<T> {
   }
 }
 
+
+// shallowRef 板块
+// 传入对象
 export function shallowRef<T extends object>(value: T): T extends Ref ? T : ShallowRef<T>
+// 传入基本数据类型
 export function shallowRef<T>(value: T): ShallowRef<T>
+// 传入自定义的一些类型，比如class
 export function shallowRef<T = any>(): ShallowRef<T | undefined>
 export function shallowRef(value?: unknown) {
   return createRef(value, true)
 }
 
-declare const RefSymbol: unique symbol
-export interface Ref<T = any> {
-  value: T
-  [RefSymbol]: true
-}
-
-export function isRef<T>(r: Ref<T> | unknown): r is Ref<T>
-
-// 如果传入ref的对象，已经是 ref 的实例
-export function isRef(r: any): r is Ref {
-  return !!(r && r.__v_isRef === true)
-}
-
-declare const ShallowRefMarker: unique symbol
-export type ShallowRef<T = any> = Ref<T> & { [ShallowRefMarker]?: true }
 
 
-type RefBase<T> = {
-  dep?: Dep
-  value: T
-}
+
+
+
+
+
+// ref依赖收集板块
 
 export function trackRefValue(ref: RefBase<any>) {
   if (shouldTrack && activeEffect) {

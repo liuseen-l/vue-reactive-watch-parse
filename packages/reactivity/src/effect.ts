@@ -63,9 +63,6 @@ function cleanupEffect(effect: ReactiveEffect) {
     deps.length = 0
   }
 
-
-
-
   // if (effect.childEffects.length > 0) {
   //   cleanupChildrenEffect(effect)
   // }
@@ -204,8 +201,6 @@ export function trackEffects(dep: Dep, debuggerEventExtraInfo?: any) {
   }
 }
 
-
-
 /**
  * @param target {Target }     
  * @param key   { string | number | symbol }
@@ -274,8 +269,7 @@ export function trigger(target: object, key?: unknown, type?: TriggerOpTypes, ne
         break
     }
   }
-
-
+  
   const effects: ReactiveEffect[] = []
   for (const dep of deps) { // dep -> set
     // 防止当前trigger是由于增添属性触发的时候,上面 deps.push(depsMap.get(key)) 会添加 undefined 到deps里面
