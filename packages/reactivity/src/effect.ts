@@ -1,7 +1,8 @@
 import { TrackOpTypes, TriggerOpTypes } from './operations'
 import { Target } from './reactive'
-import { Dep } from './dep'
+import { createDep, Dep } from './dep'
 import { isArray, extend, isMap, isIntegerKey, toNumber } from '@vue/shared'
+import { ComputedRefImpl } from './computed'
 /**
  * effect1(()=>{
  *    state.name
@@ -62,6 +63,9 @@ function cleanupEffect(effect: ReactiveEffect) {
     deps.length = 0
   }
 
+
+
+
   // if (effect.childEffects.length > 0) {
   //   cleanupChildrenEffect(effect)
   // }
@@ -72,6 +76,7 @@ export class ReactiveEffect<T = any> {
   deps: Dep[] = [] // 让 effect 记录他依赖了哪些属性，同时要记录当前属性依赖了哪个effect 
   parent: ReactiveEffect | undefined = undefined
   // childEffects: ReactiveEffect[] = []
+  computed?: ComputedRefImpl<T>
   constructor(
     public fn: () => T,
     public scheduler: any | null = null,
@@ -175,27 +180,31 @@ export function track(target: object, key: unknown, type?: TrackOpTypes) {
 
   if (!dep) {
     // 创建当前字段装副作用函数的小桶
-    dep = new Set()
+    dep = createDep()
     depsMap.set(key, dep)
   }
 
-  trackEffects(dep)
+  // 开发环境的debugger
+  const eventInfo = __DEV__
+    ? { effect: activeEffect, target, type, key }
+    : undefined
+
+  trackEffects(dep, eventInfo)
 }
 
-export function trackEffects(dep: Dep) {
+
+// 第二个参数用来debugger，这里我们用不到先跳过
+export function trackEffects(dep: Dep, debuggerEventExtraInfo?: any) {
   // 判断当前的副作用函数是否已经被收集过，收集过就不用再收集了，虽然set可以过滤重复的，但还是有效率问题
   let shouldTrack = !dep.has(activeEffect)
-
-  // 如果是内层的effect 我们可以将之前的先清空掉
-  // if (effectStack.length === 1) {
-  //   dep.clear()
-  // }
 
   if (shouldTrack) {
     dep.add(activeEffect)
     activeEffect.deps.push(dep) // 副作用函数保存自己被哪些 target.key 所收集
   }
 }
+
+
 
 /**
  * @param target {Target }     
@@ -277,19 +286,43 @@ export function trigger(target: object, key?: unknown, type?: TriggerOpTypes, ne
   triggerEffects(effects)
 }
 
-export function triggerEffects(dep: Dep | ReactiveEffect[]) {
+export function triggerEffects(
+  dep: Dep | ReactiveEffect[],
+  debuggerEventExtraInfo?: any
+) {
   // 老问题出现了，因为我们传入的dep是Dep，一个set集合，遍历的时候执行run，run中将当前的effect从dep中删除，但是重新执行又添加进去，导致死循环
   const effects = isArray(dep) ? dep : [...dep]
+
+
+  // for (const effect of effects) {
+  //   if (effect.computed) {
+  //     triggerEffect(effect, debuggerEventExtraInfo)
+  //   }
+  // }
+
+  // 遍历副作用函数，每次执行更详细的trigger前需要先判断当前的effect是否为计算属性的
   for (const effect of effects) {
-    // 防止 effect 中同时执行和赋值导致死循环
-    if (effect !== activeEffect) {
-      if (effect.scheduler) {
-        return effect.scheduler()
-      }
-      effect.run()
+    if (!effect.computed) {
+      triggerEffect(effect, debuggerEventExtraInfo)
     }
   }
 }
+
+function triggerEffect(
+  effect: ReactiveEffect,
+  debuggerEventExtraInfo?: any
+) {
+  // 防止 effect 中同时执行和赋值导致死循环
+  if (effect !== activeEffect) {
+    // 判断effect是否有调度器，比如计算属性就会传入这个属性，将控制权返回给用户
+    if (effect.scheduler) {
+      return effect.scheduler()
+    }
+    effect.run()
+  }
+}
+
+
 
 // 副作用函数的构造函数
 export function effect<T = any>(fn: () => T, options?: any) {

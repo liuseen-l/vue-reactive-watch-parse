@@ -49,7 +49,6 @@ const tsPlugin = ts({
     exclude: ['**/__tests__', 'test-dts']
   }
 })
-
 function createConfig(format, output) {
   output.sourcemap = sourcemap; // 添加sourcemap  
   output.exports = 'named';

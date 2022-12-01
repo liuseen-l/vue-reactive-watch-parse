@@ -12,6 +12,7 @@
       "global"
     ]
   },
+  "sideEffects": false,
   "dependencies": {
     "@vue/shared": "workspace:^1.0.0"
   }

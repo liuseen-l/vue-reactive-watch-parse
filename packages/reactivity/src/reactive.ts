@@ -149,6 +149,7 @@ export const enum ReactiveFlags {
 
 export function toRaw<T>(observed: T): T {
   // 如果传入的对象是一个响应式对象,例如reactive代理的响应式对象,可以访问该代理对象的'__v_raw'属性,这个属性会返回代理对象的原始对象
+  // 当传入的observed本身就是一个原始对象的时候，那么访问RAW将返回undefined，这个时候raw就是false，然后最后return的时候判断为false，返回observed本身
   const raw = observed && (observed as Target)[ReactiveFlags.RAW]
   // 如果这里获取到了原始对象,但是这个原始对象还可能是一个响应式对象,因此需要递归的去调用toRaw方法去获取原始对象,直到真正的获取到了原始对象
   return raw ? toRaw(raw) : observed
