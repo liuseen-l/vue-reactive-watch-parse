@@ -182,11 +182,11 @@ export function track(target: object, key: unknown, type?: TrackOpTypes) {
   }
 
   // 开发环境的debugger
-  const eventInfo = __DEV__
-    ? { effect: activeEffect, target, type, key }
-    : undefined
+  // const eventInfo = __DEV__
+  //   ? { effect: activeEffect, target, type, key }
+  //   : undefined
 
-  trackEffects(dep, eventInfo)
+  trackEffects(dep)
 }
 
 
@@ -269,7 +269,7 @@ export function trigger(target: object, key?: unknown, type?: TriggerOpTypes, ne
         break
     }
   }
-  
+
   const effects: ReactiveEffect[] = []
   for (const dep of deps) { // dep -> set
     // 防止当前trigger是由于增添属性触发的时候,上面 deps.push(depsMap.get(key)) 会添加 undefined 到deps里面

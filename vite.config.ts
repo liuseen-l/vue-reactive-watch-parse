@@ -12,7 +12,7 @@ export default defineConfig({
     },
   },
   test: {
-    include: ["**/__tests__/reactiveArray.spec.ts"],
+    include: ["**/__tests__/*.spec.ts"],
     exclude: ["**/node_modules/**", " **/dist/**"],
   }
 });

@@ -5,7 +5,6 @@ import { TrackOpTypes, TriggerOpTypes } from './operations'
 import { warn } from './warning'
 import { makeMap } from './makeMap'
 import { isRef } from './ref'
-import { toShallow } from './collectionHandlers'
 
 
 const arrayInstrumentations = createArrayInstrumentations()
