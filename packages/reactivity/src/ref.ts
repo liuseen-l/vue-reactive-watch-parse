@@ -103,15 +103,11 @@ function createRef(rawValue: unknown, shallow: boolean) {
      *
      * 对于情况三来说, ref 是深层次的相应，但是传入的值是只读的相应对象的时候比如 readonly，我们也可以直接将起赋值给 ref 的 value 值，因为本身就是响应式的我们不需要再去转换响应式                                      
      * 
-     * 但是可能会想到如果我们传入的就是一个reactive的时候也是响应式的，那么也不用去转换啊？
-     * 
-     * 
      * 
      *  */
     const useDirectValue = this.__v_isShallow || isShallow(newVal) || isReadonly(newVal)
 
     /**
-     * 
      * let obj = { a : 1}
      * let r = ref(reactive(obj))
      * 
@@ -119,8 +115,9 @@ function createRef(rawValue: unknown, shallow: boolean) {
      * 
      */
     newVal = useDirectValue ? newVal : toRaw(newVal)
+
+    // 判断传入的数据是否发生了变化，如果是reactive类型的话，这里是经过 toRaw 转换的，ref 实例如果保存的结果为 reactive 类型的话，那么它的 _rawValue 始终是指向
     if (hasChanged(newVal, this._rawValue)) {
-      // 上面的情况中
       this._rawValue = newVal
       this._value = useDirectValue ? newVal : toReactive(newVal)
       triggerRefValue(this, newVal)
@@ -139,11 +136,6 @@ export function shallowRef<T = any>(): ShallowRef<T | undefined>
 export function shallowRef(value?: unknown) {
   return createRef(value, true)
 }
-
-
-
-
-
 
 
 

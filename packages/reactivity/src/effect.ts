@@ -3,6 +3,7 @@ import { Target } from './reactive'
 import { createDep, Dep } from './dep'
 import { isArray, extend, isMap, isIntegerKey, toNumber } from '@vue/shared'
 import { ComputedRefImpl } from './computed'
+
 /**
  * effect1(()=>{
  *    state.name
@@ -21,10 +22,8 @@ import { ComputedRefImpl } from './computed'
 // let effectDeep = 0;
 // export let effectDeepStack: Array<ReactiveEffect>[] | null = []
 
-
 let effectStack: ReactiveEffect[] = []
 export let activeEffect: ReactiveEffect | undefined
-
 
 export const ITERATE_KEY = Symbol('iterate')
 // // * TODO: review 
@@ -127,7 +126,6 @@ export class ReactiveEffect<T = any> {
         //     effectDeepStack[effectDeep - 1][0].childEffects.push(effectDeepStack[effectDeep].pop())
         //   }
         // }
-
         effectStack.pop() // 嵌套副作用函数执行完毕以后将最里层的副作用函数pop出去
 
         activeEffect = effectStack[effectStack.length - 1]
@@ -189,7 +187,6 @@ export function track(target: object, key: unknown, type?: TrackOpTypes) {
   trackEffects(dep)
 }
 
-
 // 第二个参数用来debugger，这里我们用不到先跳过
 export function trackEffects(dep: Dep, debuggerEventExtraInfo?: any) {
   // 判断当前的副作用函数是否已经被收集过，收集过就不用再收集了，虽然set可以过滤重复的，但还是有效率问题
@@ -243,7 +240,7 @@ export function trigger(target: object, key?: unknown, type?: TriggerOpTypes, ne
           }
         }
         /**
-         *  这里为什么还需要 isIntergerKey 去判断 key 是否为符合数组的索引类型?
+         *    这里为什么还需要 isIntergerKey 去判断 key 是否为符合数组的索引类型?
          *    因为 TriggerOpTypes.ADD 只是确认了当前的属性为新增属性,当走到 else if (isIntegerKey(key)) 的时候
          *    只能说明 target 是数组类型,但是不能确保key是不是符合数组的索引属性,因此需要判断一下
          *  */
@@ -258,7 +255,6 @@ export function trigger(target: object, key?: unknown, type?: TriggerOpTypes, ne
           if (isMap(target)) { // 如果删除属性的对象是Map对象,取出Map所对应的for...of keys()副作用函数
             deps.push(depsMap.get(MAP_KEY_ITERATE_KEY))
           }
-
         }
         break
       case TriggerOpTypes.SET:
@@ -269,7 +265,6 @@ export function trigger(target: object, key?: unknown, type?: TriggerOpTypes, ne
         break
     }
   }
-
   const effects: ReactiveEffect[] = []
   for (const dep of deps) { // dep -> set
     // 防止当前trigger是由于增添属性触发的时候,上面 deps.push(depsMap.get(key)) 会添加 undefined 到deps里面
@@ -286,7 +281,6 @@ export function triggerEffects(
 ) {
   // 老问题出现了，因为我们传入的dep是Dep，一个set集合，遍历的时候执行run，run中将当前的effect从dep中删除，但是重新执行又添加进去，导致死循环
   const effects = isArray(dep) ? dep : [...dep]
-
 
   // for (const effect of effects) {
   //   if (effect.computed) {
@@ -316,8 +310,6 @@ function triggerEffect(
   }
 }
 
-
-
 // 副作用函数的构造函数
 export function effect<T = any>(fn: () => T, options?: any) {
 
@@ -325,8 +317,6 @@ export function effect<T = any>(fn: () => T, options?: any) {
   /**
    * 最外层的深度为0
    * 最外层执行完毕之后深度为1，那么在深度为1所执行的所有effect,都应该被存储到最外层的childEffects当中
-   * 
-   * 
    */
 
   const _effect = new ReactiveEffect(fn) // 这里导致嵌套函数有问题
