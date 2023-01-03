@@ -13,7 +13,7 @@ describe('ref', () => {
     let obj = ref(r);
     const fnSpy = vi.fn()
     effect(() => {
-      console.log(obj.value); // 收集了2次依赖
+      obj.value // 收集了2次依赖
       fnSpy()
     });
 
@@ -30,7 +30,7 @@ describe('ref', () => {
     let obj = ref(r);
     const fnSpy = vi.fn()
     effect(() => {
-      console.log(obj.value); // 收集了2次依赖
+      obj.value// 收集了2次依赖
       fnSpy()
     });
 

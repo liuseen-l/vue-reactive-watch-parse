@@ -1,8 +1,15 @@
 import { TrackOpTypes, TriggerOpTypes } from './operations'
 import { Target } from './reactive'
-import { createDep, Dep } from './dep'
+import { createDep, Dep, finalizeDepMarkers, initDepMarkers, newTracked, wasTracked } from './dep'
 import { isArray, extend, isMap, isIntegerKey, toNumber } from '@vue/shared'
 import { ComputedRefImpl } from './computed'
+
+
+let effectTrackDepth = 0
+
+export let trackOpBit = 1
+
+const maxMarkerBits = 30
 
 /**
  * effect1(()=>{
@@ -19,14 +26,17 @@ import { ComputedRefImpl } from './computed'
  * 用栈来处理，存储正确的关系
  */
 
-// let effectDeep = 0;
-// export let effectDeepStack: Array<ReactiveEffect>[] | null = []
+// 修改
+// let effectDeep = 0; 
+// export let effectDeepStack: Array<ReactiveEffect>[] | null = [] 
 
-let effectStack: ReactiveEffect[] = []
+// 原始
+// let effectStack: ReactiveEffect[] = [] 
 export let activeEffect: ReactiveEffect | undefined
 
 export const ITERATE_KEY = Symbol('iterate')
 // // * TODO: review 
+// 修改
 // export const ARR_VALUE_ITERATE_KEY = Symbol('iterate')
 export const MAP_KEY_ITERATE_KEY = Symbol('Map key iterate')
 
@@ -43,6 +53,7 @@ export function resetTracking() {
   shouldTrack = last === undefined ? true : last
 }
 
+// 修改
 // function cleanupChildrenEffect(effect: ReactiveEffect) {
 //   // 当前触发父effect重新执行，这意味着内层的effect都会执行一遍，为了防止收集重复的依赖，那么可以在这里将内层依赖进行递归清空（下一层）依赖清空  
 //   for (let i = 0; i < effect.childEffects.length; i++) {
@@ -50,7 +61,6 @@ export function resetTracking() {
 //     effect.childEffects.shift()
 //   }
 // }
-
 function cleanupEffect(effect: ReactiveEffect) {
   // deps 是当前副作用函数身上的一个属性，这个属性中存储了那些object.key收集了当前effect所对应的set集合
   const { deps } = effect // deps -> [set,set]
@@ -62,6 +72,7 @@ function cleanupEffect(effect: ReactiveEffect) {
     deps.length = 0
   }
 
+  // 修改
   // if (effect.childEffects.length > 0) {
   //   cleanupChildrenEffect(effect)
   // }
@@ -86,54 +97,81 @@ export class ReactiveEffect<T = any> {
       return this.fn()
     }
 
-    /**
-     * 防止死循环，比如
-     * effect(()=>{
-     *    state.name = Math.Romdom()
-     * })
-     */
-
-    if (!effectStack.includes(this)) { // 屏蔽同一个effect会多次执行 
-      try {
-
-        /**
-         * 执行传入给 effect 的 fn 函数的时候
-         * 将当前的 effect 保存在当前深度，开始深度为0
-         *  */
-        // if (!effectDeepStack[effectDeep]) {
-        //   effectDeepStack[effectDeep] = <ReactiveEffect[]>[]
-        //   effectDeepStack[effectDeep].push(this)
-        // } else {
-        //   effectDeepStack[effectDeep].push(this)
-        // }
-
-        // 激活状态的话，需要建立属性和依赖的关系
-        cleanupEffect(this) // 清空分支切换时遗留的副作用函数
-        activeEffect = this;
-        effectStack.push(activeEffect)
-
-        // 每次执行一次 effect 当中的 fn 意味着深度加1
-
-        // effectDeep++
-        return this.fn(); // 访问data的属性，触发getter （依赖收集）
-      } finally {
-        // effect 当中的 fn 执行完毕之后深度减1
-        // effectDeep--
-        // // 防止下标越界 
-        // if (effectDeep > 0) {
-        //   for (let i = 0; i < effectDeepStack[effectDeep].length; i++) {
-        //     // 将下一层的effect保存在当前effect的child
-        //     effectDeepStack[effectDeep - 1][0].childEffects.push(effectDeepStack[effectDeep].pop())
-        //   }
-        // }
-        effectStack.pop() // 嵌套副作用函数执行完毕以后将最里层的副作用函数pop出去
-
-        activeEffect = effectStack[effectStack.length - 1]
-
-        //当最外层的effect执行完毕之后，将 effectDeepStack 清空
-        // if (!activeEffect)
-        //   effectDeepStack.length = 0
+    let parent: ReactiveEffect | undefined = activeEffect
+    let lastShouldTrack = shouldTrack
+    while (parent) {
+      if (parent === this) {
+        return
       }
+      parent = parent.parent
+    }
+    /**
+         * 
+         *  let obj = reactive({a:1,b:2,c:3})
+         *  
+         *  effect(()=>{
+         *    // 执行到这里的时候 trackOpBit = 2 , effectTrackDepth = 1
+         *    obj.a
+         *    // 执行到这里 dep1.n = 0000 0010 , dep1.w = 0000 0000，执行完毕之后 deps1.length = 1
+         *    effect(()=>{ 
+         *        // 执行到这里的时候 trackOpBit = 4 , effectTrackDepth = 2
+         *        obj.b
+         *        // 执行到这里 dep2.n = 0000 0100, dep2.w = 0000 0000，执行完毕之后 deps2.length == 1
+         *    }) // 执行完毕之后，trackOpBit = 2 , effectTrackDepth = 1，dep1.n = 0000 0010, dep1.w = 0000 0000，
+         * 
+         *    // 执行到这里的时候 trackOpBit = 2 , effectTrackDepth = 1, dep1.n = 0000 0010 , dep1.w = 0000 0000
+         *    obj.c
+         *    // 执行到这里 dep3.n = 0000 0010, dep3.w = 0000 0000，执行完毕之后 deps1.length = 2
+         *  })
+         * 
+         * 当 obj.a 的值发生变化的时候，重新执行最外层的 effect
+         *  effect(()=>{ // deps1.length = 2
+         *    // 执行到这里的时候 trackOpBit = 2 , effectTrackDepth = 1
+         *    // 这一次会走 initDepMarks() 当中的for循环，去设置 dep1.w 的值 ，dep1.w |= trackOpBit = 0000 0010, dep3.w |= trackOpBit = 0000 0010,
+         *    obj.a
+         *    // 执行到这里 dep1.n = 0000 0010 ，dep1.w = 0000 0010, 通过调用 wasTracked(dep) 进行判断，判断结果设置 shouldTrack = false, deps1.length == 1
+         *    effect(()=>{ // 这里会新创建一个effect 
+         *        // 执行到这里的时候 trackOpBit = 4 , effectTrackDepth = 2
+         *        // 由于是新创建的，所以deps2.length == 0 ,因此不走initDepMarks当中的for循环
+         *        obj.b
+         *        // 执行到这里 dep2.n = 0000 0100, dep2.w = 0000 0000，执行完毕之后 deps2.length == 1
+         * 
+         *    }) // 执行完毕之后，trackOpBit = 2 , effectTrackDepth = 1，dep1.n = 0000 0010, dep1.w = 0000 0010，dep3.w = 0000 0010
+         * 
+         *    // 执行到这里的时候 trackOpBit = 2 , effectTrackDepth = 1, dep1.n = 0000 0010, dep1.w = 0000 0010, dep3.w = 0000 0010
+         *    obj.c
+         *    // 执行到这里 dep3.n = 0000 0010 ，dep3.w = 0000 0010, 通过调用 wasTracked(dep) 进行判断，判断结果设置 shouldTrack = false, deps1.length == 2
+         *  })
+         * 
+         * 
+         */
+
+    try {
+      this.parent = activeEffect // 刚开始的activeEffect是undefined
+      activeEffect = this
+      shouldTrack = true
+
+      // 一来 trackOpBit 变成了2 ，effectTrackDepth 变成了 1
+      trackOpBit = 1 << ++effectTrackDepth // 1 向左移动 effectTrackDepth+1 位，数值扩大 (effectTrackDepth+1)*2 倍， 例如 5 << 2 == 20 , 5 << 1 == 10
+
+      // 1 <= 30
+      if (effectTrackDepth <= maxMarkerBits) {
+        // 一开始走这里，但是 deps.length = 0,没有什么操作，但是第二次执行的时候 deps.length = 1，deps[i].w |= trackOpBit 等于了 0000 0010
+        initDepMarkers(this)
+      } else {
+        cleanupEffect(this)
+      }
+      return this.fn()  // run 完之后，dep.n 变成 0000 0010
+    } finally {
+      if (effectTrackDepth <= maxMarkerBits) {
+        finalizeDepMarkers(this)
+      }
+      // 执行完毕之后 trackOpBit 变成了 1,effectTrackDepth 变成了 0
+      trackOpBit = 1 << --effectTrackDepth
+
+      activeEffect = this.parent
+      shouldTrack = lastShouldTrack
+      this.parent = undefined
     }
   }
 
@@ -160,6 +198,7 @@ export function track(target: object, key: unknown, type?: TrackOpTypes) {
   if (!isTracking() || !shouldTrack) { //如果这个属性不依赖于 effect 直接跳出
     return
   }
+
   // 根据 target 从 '桶' 当中取得depsMap ,他是一个 Map 类型: key -> effetcs
   // 这行代码的含义就是从桶（大桶）当中拿出 target 对象所有字段的副作用函数集合（所有小桶）  
   let depsMap = targetMap.get(target)
@@ -179,22 +218,30 @@ export function track(target: object, key: unknown, type?: TrackOpTypes) {
     depsMap.set(key, dep)
   }
 
-  // 开发环境的debugger
-  // const eventInfo = __DEV__
-  //   ? { effect: activeEffect, target, type, key }
-  //   : undefined
-
   trackEffects(dep)
 }
 
 // 第二个参数用来debugger，这里我们用不到先跳过
-export function trackEffects(dep: Dep, debuggerEventExtraInfo?: any) {
+export function trackEffects(dep: Dep) {
   // 判断当前的副作用函数是否已经被收集过，收集过就不用再收集了，虽然set可以过滤重复的，但还是有效率问题
-  let shouldTrack = !dep.has(activeEffect)
+  // 原始
+  // let shouldTrack = !dep.has(activeEffect!)
+
+  let shouldTrack = false
+  if (effectTrackDepth <= maxMarkerBits) {
+    if (!newTracked(dep)) {
+      // 对 n 的操作
+      dep.n |= trackOpBit // set newly tracked  开始的时候 n = 0000 0000 | 0000 0010 变成 0000 0010
+      shouldTrack = !wasTracked(dep)       // 第一次的时候 shouldTrack = 0000 0000 & 0000 0010 变成 0000 0000 返回 false，第二次的时候 shouldTrack = 0000 0010 & 0000 0010 变成 0000 0010 > 0 返回 true 
+    }
+  } else {
+    // Full cleanup mode.
+    shouldTrack = !dep.has(activeEffect!)
+  }
 
   if (shouldTrack) {
     dep.add(activeEffect)
-    activeEffect.deps.push(dep) // 副作用函数保存自己被哪些 target.key 所收集
+    activeEffect!.deps.push(dep) // 副作用函数保存自己被哪些 target.key 所收集
   }
 }
 
@@ -216,8 +263,12 @@ export function trigger(target: object, key?: unknown, type?: TriggerOpTypes, ne
   let deps: (Dep | undefined)[] = [] // [set,set]
 
   // 如果修改 arr.length，将索引大于等于 newValue(修改length的值) 的副作用函数取出来执行
-  if (key === 'length' && isArray(target)) {
-    const newLength = toNumber(newValue)
+  if (type === TriggerOpTypes.CLEAR) {
+    // collection being cleared
+    // trigger all effects for target
+    deps = [...depsMap.values()]
+  } else if (key === 'length' && isArray(target)) {
+    const newLength = Number(newValue)
     depsMap.forEach((dep, key) => {
       if (key === 'length' || key >= newLength) {
         deps.push(dep)
@@ -229,6 +280,7 @@ export function trigger(target: object, key?: unknown, type?: TriggerOpTypes, ne
       // 这里有个问题,就是当前trigger是由于增添属性触发的时候,这里 target key 会获取到 undefined，set在删除属性这里也会拿到undefined，因为set没有get方法，因此没有元素和effect建立依赖关系
       deps.push(depsMap.get(key))
     }
+
     switch (type) {
       // 只有当操作类型为 'ADD' 时，才触发 target 身上 key == ITERATE_KEY 相关联的副作用函数重新执行
       case TriggerOpTypes.ADD:
@@ -265,48 +317,57 @@ export function trigger(target: object, key?: unknown, type?: TriggerOpTypes, ne
         break
     }
   }
-  const effects: ReactiveEffect[] = []
-  for (const dep of deps) { // dep -> set
-    // 防止当前trigger是由于增添属性触发的时候,上面 deps.push(depsMap.get(key)) 会添加 undefined 到deps里面
-    if (dep) {
-      effects.push(...dep)
+
+  // 如果 deps 的长度为1，直接传入deps[0]
+  if (deps.length === 1) {
+    if (deps[0]) {
+      triggerEffects(deps[0])
     }
+  } else {
+    const effects: ReactiveEffect[] = []
+    for (const dep of deps) { // dep -> set
+      // 防止当前trigger是由于增添属性触发的时候,上面 deps.push(depsMap.get(key)) 会添加 undefined 到deps里面
+      if (dep) {
+        effects.push(...dep)
+      }
+    }
+    triggerEffects(createDep(effects))
+    // triggerEffects(effects)
   }
-  triggerEffects(effects)
 }
 
 export function triggerEffects(
   dep: Dep | ReactiveEffect[],
-  debuggerEventExtraInfo?: any
 ) {
   // 老问题出现了，因为我们传入的dep是Dep，一个set集合，遍历的时候执行run，run中将当前的effect从dep中删除，但是重新执行又添加进去，导致死循环
   const effects = isArray(dep) ? dep : [...dep]
 
-  // for (const effect of effects) {
-  //   if (effect.computed) {
-  //     triggerEffect(effect, debuggerEventExtraInfo)
-  //   }
-  // }
-
   // 遍历副作用函数，每次执行更详细的trigger前需要先判断当前的effect是否为计算属性的
+  //  先触发计算属性的副作用函数
+  for (const effect of effects) {
+    if (effect.computed) {
+      triggerEffect(effect)
+    }
+  }
+
   for (const effect of effects) {
     if (!effect.computed) {
-      triggerEffect(effect, debuggerEventExtraInfo)
+      triggerEffect(effect)
     }
   }
 }
 
 function triggerEffect(
   effect: ReactiveEffect,
-  debuggerEventExtraInfo?: any
 ) {
   // 防止 effect 中同时执行和赋值导致死循环
   if (effect !== activeEffect) {
     // 判断effect是否有调度器，比如计算属性就会传入这个属性，将控制权返回给用户
     if (effect.scheduler) {
-      return effect.scheduler()
+      effect.scheduler()
+    } else {
+      effect.run()
     }
-    effect.run()
   }
 }
 
@@ -341,5 +402,82 @@ export interface ReactiveEffectRunner<T = any> {
   effect: ReactiveEffect
 }
 
+// export class ReactiveEffect<T = any> {
+//   active = true
+//   deps: Dep[] = [] // 让 effect 记录他依赖了哪些属性，同时要记录当前属性依赖了哪个effect
+//   parent: ReactiveEffect | undefined = undefined
+//   // childEffects: ReactiveEffect[] = []
+//   computed?: ComputedRefImpl<T>
+//   constructor(
+//     public fn: () => T,
+//     public scheduler: any | null = null,
+//     scope?: any
+//   ) {
+//   }
 
+//   run() {
+//     // 如果不是激活状态
+//     if (!this.active) {
+//       return this.fn()
+//     }
 
+//     /**
+//      * 防止死循环，比如
+//      * effect(()=>{
+//      *    state.name = Math.Romdom()
+//      * })
+//      */
+
+//     if (!effectStack.includes(this)) { // 屏蔽同一个effect会多次执行
+//       try {
+
+//         /**
+//          * 执行传入给 effect 的 fn 函数的时候
+//          * 将当前的 effect 保存在当前深度，开始深度为0
+//          *  */
+//         // if (!effectDeepStack[effectDeep]) {
+//         //   effectDeepStack[effectDeep] = <ReactiveEffect[]>[]
+//         //   effectDeepStack[effectDeep].push(this)
+//         // } else {
+//         //   effectDeepStack[effectDeep].push(this)
+//         // }
+
+//         // 激活状态的话，需要建立属性和依赖的关系
+//         cleanupEffect(this) // 清空分支切换时遗留的副作用函数
+//         activeEffect = this;
+//         effectStack.push(activeEffect)
+
+//         // 每次执行一次 effect 当中的 fn 意味着深度加1
+
+//         // effectDeep++
+//         return this.fn(); // 访问data的属性，触发getter （依赖收集）, 并返回getter的结果，在计算属性中 computed.value 可以拿到这个 getter 函数返回的值
+//       } finally {
+//         // effect 当中的 fn 执行完毕之后深度减1
+//         // effectDeep--
+//         // // 防止下标越界
+//         // if (effectDeep > 0) {
+//         //   for (let i = 0; i < effectDeepStack[effectDeep].length; i++) {
+//         //     // 将下一层的effect保存在当前effect的child
+//         //     effectDeepStack[effectDeep - 1][0].childEffects.push(effectDeepStack[effectDeep].pop())
+//         //   }
+//         // }
+//         effectStack.pop() // 嵌套副作用函数执行完毕以后将最里层的副作用函数pop出去
+
+//         activeEffect = effectStack[effectStack.length - 1]
+
+//         //当最外层的effect执行完毕之后，将 effectDeepStack 清空
+//         // if (!activeEffect)
+//         //   effectDeepStack.length = 0
+//       }
+//     }
+//   }
+
+//   // 清除依赖关系，可以手动调用stop执行
+//   stop() {
+//     if (this.active) // 如果effect是激活的采取将deps上的effect移除
+//     {
+//       cleanupEffect(this)
+//       this.active = false // 关闭当前effect的激活状态
+//     }
+//   }
+// }

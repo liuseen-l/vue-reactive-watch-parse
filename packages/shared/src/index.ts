@@ -46,3 +46,17 @@ export const toRawType = (value: unknown): string => {
   // extract "RawType" from strings like "[object RawType]"
   return toTypeString(value).slice(8, -1)
 }
+
+
+const cacheStringFunction = <T extends (str: string) => string>(fn: T): T => {
+  const cache: Record<string, string> = Object.create(null)
+  return ((str: string) => {
+    const hit = cache[str]
+    return hit || (cache[str] = fn(str))
+  }) as T
+}
+// 用于警告
+export const capitalize = cacheStringFunction(
+  (str: string) => str.charAt(0).toUpperCase() + str.slice(1)
+)
+

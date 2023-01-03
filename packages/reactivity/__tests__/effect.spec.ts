@@ -271,7 +271,7 @@ describe.only('reactive', () => {
     state_array[1] = 'bar'
     expect(fnSpy).toHaveBeenCalledTimes(2)
     state_array.length = 0
-    expect(fnSpy).toHaveBeenCalledTimes(5)
+    expect(fnSpy).toHaveBeenCalledTimes(3)
   })
 
   test("避免污染数组的原始数据", () => {
@@ -300,9 +300,7 @@ describe.only('reactive', () => {
     originalArr[0].push(1);
     expect(fnSpy).toHaveBeenCalledTimes(2)
   })
-
 })
-
 
 describe("effect 嵌套内存泄漏问题", () => {
   test('effect嵌套问题_1', () => {
@@ -338,8 +336,6 @@ describe("effect 嵌套内存泄漏问题", () => {
     // 期望应该变成4 但是变成了6，因为state2.bar 实际上收集了3个重复的依赖，但是由于是new出来，set无法去重
   })
 
-
-
   test('effect嵌套问题_3', () => {
     const original = { foo: 1, bar: 1 }
     const original2 = { bar: 1 }
@@ -370,7 +366,6 @@ describe("effect 嵌套内存泄漏问题", () => {
     expect(fnSpy2).toHaveBeenCalledTimes(8)
     // 期望应该变成4 但是变成了6，因为state2.bar 实际上收集了3个重复的依赖，但是由于是new出来，set无法去重
   })
-
 
   test("内存泄漏", () => {
     const original = { foo: 1, bar: 1 }

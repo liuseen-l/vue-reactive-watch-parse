@@ -1,8 +1,7 @@
 import { createDep, Dep } from './dep'
 import { hasChanged, isObject } from '@vue/shared'
-import { isReadonly, isShallow, reactive, toRaw, toReactive } from './reactive'
-import { activeEffect, isTracking, shouldTrack, trackEffects, triggerEffects } from './effect'
-import { TrackOpTypes, TriggerOpTypes } from './operations'
+import { isReadonly, isShallow, toRaw, toReactive } from './reactive'
+import { activeEffect, shouldTrack, trackEffects, triggerEffects } from './effect'
 
 declare const RefSymbol: unique symbol
 export interface Ref<T = any> {
@@ -115,7 +114,7 @@ function createRef(rawValue: unknown, shallow: boolean) {
      * 
      */
     newVal = useDirectValue ? newVal : toRaw(newVal)
-
+    
     // 判断传入的数据是否发生了变化，如果是reactive类型的话，这里是经过 toRaw 转换的，ref 实例如果保存的结果为 reactive 类型的话，那么它的 _rawValue 始终是指向
     if (hasChanged(newVal, this._rawValue)) {
       this._rawValue = newVal
@@ -124,7 +123,6 @@ function createRef(rawValue: unknown, shallow: boolean) {
     }
   }
 }
-
 
 // shallowRef 板块
 // 传入对象
@@ -137,16 +135,12 @@ export function shallowRef(value?: unknown) {
   return createRef(value, true)
 }
 
-
-
 // ref依赖收集板块
-
 export function trackRefValue(ref: RefBase<any>) {
   if (shouldTrack && activeEffect) {
     // 如果这里传入的是ref实例的话，那么返回的结果始终是ref实例本身，因为内部是通过__v_raw属性来判断的，ref实例身上没有这个属性
     ref = toRaw(ref)
     // 在这里判断了一下是否为开发环境，开发环境传入第二个参数
-
     trackEffects(ref.dep || (ref.dep = createDep()))
   }
 }
@@ -157,7 +151,6 @@ export function triggerRefValue(ref: RefBase<any>, newVal?: any) {
   // 首先判断当前的ref实例上是否有收集过依赖
   if (ref.dep) {
     // 判断当前的运行环境，如果是开发环境的话，传入第二个参数用于debugger
-
     triggerEffects(ref.dep)
   }
 }

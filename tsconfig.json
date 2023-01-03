@@ -10,14 +10,14 @@
     "moduleResolution": "node",
     "allowJs": false,
     "strict": false,
-    "noUnusedLocals": false,// 没有使用直接报错
+    "noUnusedLocals": false, // 没有使用直接报错
     "experimentalDecorators": true,
     "resolveJsonModule": true,
     "esModuleInterop": true,
+    // "skipLibCheck":true,
     "removeComments": false,
     "jsx": "preserve",
     "lib": ["esnext", "dom"],
-    "types": ["jest", "puppeteer", "node"],
     "rootDir": ".",
     "paths": {
       "@vue/compat": ["packages/vue-compat/src"],
@@ -25,11 +25,4 @@
       "vue": ["packages/vue/src"]
     }
   },
-  "include": [
-    "packages/global.d.ts", // 这个不写文件里面访问不到__DEV__
-    "packages/*/src",
-    "packages/runtime-dom/types/jsx.d.ts",
-    "packages/*/__tests__",
-    "test-dts"
-  ]
 }

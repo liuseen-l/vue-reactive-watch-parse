@@ -1,7 +1,7 @@
 import { toRaw, ReactiveFlags, toReactive, toReadonly } from './reactive'
 import { track, trigger, ITERATE_KEY, MAP_KEY_ITERATE_KEY } from './effect'
 import { TrackOpTypes, TriggerOpTypes } from './operations'
-import { hasOwn, hasChanged, toRawType, isMap } from '@vue/shared'
+import { hasOwn, hasChanged, toRawType, isMap, capitalize } from '@vue/shared'
 
 export type CollectionTypes = IterableCollections | WeakCollections
 
@@ -117,7 +117,7 @@ function size(target: IterableCollections, isReadonly = false) {
   target = (target as any)[ReactiveFlags.RAW]
   // readonly(reactive(Set))
   const rawTarget = toRaw(target)
-
+  // 判断是否为只读的，如果是只读的不收集依赖
   !isReadonly && track(rawTarget, ITERATE_KEY, TrackOpTypes.ITERATE)
   //  在这里我们将Reflect的第三个值更改为了target，即代理对象的原始集合，因为访问 Set 的 size 属性时，内部会将 S 赋值为this(当前size属性的调用者),然后调用S.[[SetData]]，
   //  如果第三个参数不传入原始集合的话，那么当前 proxy 身上是没有 [[SetData]] 这个内部方法的，因此会报错
@@ -233,14 +233,17 @@ function deleteEntry(this: CollectionTypes, key: unknown) {
   const { has, get } = getProto(rawTarget)
   // 判断集合是否有当前这个值
   let hadKey = has.call(rawTarget, key)
-  // 如果是 map.delete(map.get(obj))
 
   if (!hadKey) {
+    // 这里需要第二次判断，因为map.has(reactive(obj) || obj) 都应该返回true
     key = toRaw(key)
     hadKey = has.call(rawTarget, key)
+  } else { // else if(__DEV__)
+    // 开发环境弹出警告
+    checkIdentityKeys(rawTarget, has, key)
   }
 
-  // 先判断是否能拿到 get 方法，因为set原始对象是没有 get 这个方法的，有 get 方法说明是 target 是 map，调用他的 get 方法获取值
+  // 先判断是否能拿到 get 方法，因为set原始对象是没有 get 这个方法的，有 get 方法说明 target 是 map，调用他的 get 方法获取值
   const oldValue = get ? get.call(rawTarget, key) : undefined
 
   // 通过原始集合删除这个值（因为只有原始集合内部方法才有[[SetData]]） 
@@ -393,11 +396,11 @@ function createIterableMethod(
 function createReadonlyMethod(type: TriggerOpTypes): Function {
   return function (this: CollectionTypes, ...args: unknown[]) {
     // if (__DEV__) {
-    //   const key = args[0] ? `on key "${args[0]}" ` : ``
-    //   console.warn(
-    //     `${capitalize(type)} operation ${key}failed: target is readonly.`,
-    //     toRaw(this)
-    //   )
+    const key = args[0] ? `on key "${args[0]}" ` : ``
+    console.warn(
+      `${capitalize(type)} operation ${key}failed: target is readonly.`,
+      toRaw(this)
+    )
     // }
     return type === TriggerOpTypes.DELETE ? false : this
   }
@@ -407,7 +410,7 @@ function createReadonlyMethod(type: TriggerOpTypes): Function {
 function createInstrumentations() {
 
 
-  const mutableInstrumentations: Record<string, Function> = {
+  const mutableInstrumentations: Record<string, Function | number> = {
     get(this: MapTypes, key: unknown) { // Map
       // 此时的this是map的代理对象
       return get(this, key)
@@ -427,7 +430,7 @@ function createInstrumentations() {
     forEach: createForEach(false, false)
   }
 
-  const shallowInstrumentations: Record<string, Function> = {
+  const shallowInstrumentations: Record<string, Function | number> = {
     get(this: MapTypes, key: unknown) {
       return get(this, key, false, true)
     },
@@ -442,7 +445,7 @@ function createInstrumentations() {
     forEach: createForEach(false, true)
   }
 
-  const readonlyInstrumentations: Record<string, Function> = {
+  const readonlyInstrumentations: Record<string, Function | number> = {
     get(this: MapTypes, key: unknown) {
       return get(this, key, true)
     },
@@ -459,7 +462,7 @@ function createInstrumentations() {
     forEach: createForEach(true, false)
   }
 
-  const shallowReadonlyInstrumentations: Record<string, Function> = {
+  const shallowReadonlyInstrumentations: Record<string, Function | number> = {
     get(this: MapTypes, key: unknown) {
       return get(this, key, true, true)
     },
@@ -475,7 +478,6 @@ function createInstrumentations() {
     clear: createReadonlyMethod(TriggerOpTypes.CLEAR),
     forEach: createForEach(true, true)
   }
-
 
   /**
    * 
@@ -563,7 +565,9 @@ function createInstrumentationGetter(isReadonly: boolean, shallow: boolean) {
       return target
     }
 
-    return Reflect.get(hasOwn(instrumentations, key) && key in target ? instrumentations : target, key, receiver)
+    return Reflect.get(hasOwn(instrumentations, key) && key in target
+      ? instrumentations
+      : target, key, receiver)
   }
 }
 
