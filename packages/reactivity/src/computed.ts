@@ -1,8 +1,7 @@
 import { isFunction, NOOP } from "@vue/shared"
 import { Dep } from './dep'
-
 import { Ref, trackRefValue, triggerRefValue } from './ref'
-import { ReactiveEffect, triggerEffects } from './effect'
+import { ReactiveEffect } from './effect'
 import { ReactiveFlags, toRaw } from "./reactive"
 
 /**
@@ -40,7 +39,6 @@ export interface WritableComputedOptions<T> {
   get: ComputedGetter<T>
   set: ComputedSetter<T>
 }
-
 
 export class ComputedRefImpl<T> {
   public dep?: Dep = undefined // 收集依赖
@@ -82,7 +80,6 @@ export class ComputedRefImpl<T> {
     //   trackEffects(this.dep || (this.dep = new Set<ReactiveEffect>)) // 
     // }
 
-
     // the computed ref may get wrapped by other proxies e.g. readonly() #3376
     // 如果直接是 computed 自己本身，这里返回的 self == this，这个和 toRaw 的判断依据有关
     const self = toRaw(this)
@@ -94,15 +91,12 @@ export class ComputedRefImpl<T> {
       self._value = self.effect.run()!
     }
     return self._value
-
-
   }
 
   set value(newValue: T) {
     this._setter(newValue) // 如果修改计算属性的值就走setter
   }
 }
-
 
 // 函数重载，computed 可以接受函数或者对象
 export function computed<T>(
