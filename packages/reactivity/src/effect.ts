@@ -97,6 +97,7 @@ export class ReactiveEffect<T = any> {
       return this.fn()
     }
 
+    // 如果是嵌套的effect，最外层的parent是undefined，第二层的parent是上一层的effect
     let parent: ReactiveEffect | undefined = activeEffect
     let lastShouldTrack = shouldTrack
     while (parent) {
@@ -145,7 +146,6 @@ export class ReactiveEffect<T = any> {
          * 
          * 
          */
-
     try {
       this.parent = activeEffect // 刚开始的activeEffect是undefined
       activeEffect = this
