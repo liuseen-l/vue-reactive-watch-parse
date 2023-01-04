@@ -24,6 +24,7 @@ const maxMarkerBits = 30
  * 
  * 用栈来处理，存储正确的关系
  */
+export type EffectScheduler = (...args: any[]) => any
 
 // 修改
 // let effectDeep = 0; 
@@ -83,9 +84,10 @@ export class ReactiveEffect<T = any> {
   parent: ReactiveEffect | undefined = undefined
   // childEffects: ReactiveEffect[] = []
   computed?: ComputedRefImpl<T>
+  onStop?: () => void
   constructor(
     public fn: () => T,
-    public scheduler: any | null = null,
+    public scheduler: EffectScheduler | null = null,
     scope?: any
   ) {
   }
@@ -179,8 +181,12 @@ export class ReactiveEffect<T = any> {
     if (this.active) // 如果effect是激活的采取将deps上的effect移除
     {
       cleanupEffect(this)
+      if (this.onStop) {
+        this.onStop()
+      }
       this.active = false // 关闭当前effect的激活状态
     }
+
   }
 }
 

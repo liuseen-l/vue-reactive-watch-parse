@@ -11,8 +11,8 @@ export default defineConfig({
       '@vue/shared': _resolve('packages/shared/src/index.ts'),
     },
   },
-  test: {
-    include: ["**/__tests__/*.spec.ts"],
-    exclude: ["**/node_modules/**", " **/dist/**"],
-  }
+  // test: {
+  //   include: ["**/__tests__/*.spec.ts"],
+  //   exclude: ["**/node_modules/**", " **/dist/**"],
+  // }
 });

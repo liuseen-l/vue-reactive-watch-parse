@@ -140,7 +140,7 @@ export interface Target {
 }
 
 export const enum ReactiveFlags {
-  SKIP = '__v_skip',
+  SKIP = '__v_skip', // 跳过代理的标志
   IS_REACTIVE = '__v_isReactive', // 一个对象已经被代理过的标志
   IS_READONLY = '__v_isReadonly',
   IS_SHALLOW = '__v_isShallow',

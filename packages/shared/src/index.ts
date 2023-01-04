@@ -9,7 +9,8 @@ export const NOOP = () => { }
 
 // 判断数组
 export const isArray = Array.isArray
-
+// 判断Set
+export const isSet = (val: unknown): val is Set<any> => toTypeString(val) === '[object Set]'
 // 判断Map
 export const isMap = (val: unknown): val is Map<any, any> => toTypeString(val) === '[object Map]'
 export const objectToString = Object.prototype.toString
@@ -60,3 +61,14 @@ export const capitalize = cacheStringFunction(
   (str: string) => str.charAt(0).toUpperCase() + str.slice(1)
 )
 
+// 用于 apiWatch
+export const EMPTY_OBJ: { readonly [key: string]: any } = {}
+
+// 检查是否为普通对象
+export const isPlainObject = (val: unknown): val is object => toTypeString(val) === '[object Object]'
+
+
+// 判断是否为 Promise对象
+export const isPromise = <T = any>(val: unknown): val is Promise<T> => {
+  return isObject(val) && isFunction(val.then) && isFunction(val.catch)
+}
