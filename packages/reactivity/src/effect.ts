@@ -158,7 +158,6 @@ export class ReactiveEffect<T = any> {
         // 一开始走这里，但是 deps.length = 0,没有什么操作，但是第二次执行的时候 deps.length = 1，deps[i].w |= trackOpBit 等于了 0000 0010，这是最简单的情况
         initDepMarkers(this)
       } else {
-        // 
         cleanupEffect(this)
       }
       return this.fn()  // run 完之后，dep.n 变成 0000 0010
