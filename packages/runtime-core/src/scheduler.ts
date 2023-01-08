@@ -7,27 +7,7 @@ export interface SchedulerJob extends Function {
   pre?: boolean
   active?: boolean
   computed?: boolean
-  /**
-   * Indicates whether the effect is allowed to recursively trigger itself
-   * when managed by the scheduler.
-   *
-   * By default, a job cannot trigger itself because some built-in method calls,
-   * e.g. Array.prototype.push actually performs reads as well (#1740) which
-   * can lead to confusing infinite loops.
-   * The allowed cases are component update functions and watch callbacks.
-   * Component update functions may update child component props, which in turn
-   * trigger flush: "pre" watch callbacks that mutates state that the parent
-   * relies on (#1801). Watch callbacks doesn't track its dependencies so if it
-   * triggers itself again, it's likely intentional and it is the user's
-   * responsibility to perform recursive state mutation that eventually
-   * stabilizes (#1727).
-   */
   allowRecurse?: boolean
-  /**
-   * Attached by renderer.ts when setting up a component's render effect
-   * Used to obtain component information when reporting max recursive updates.
-   * dev only.
-   */
   ownerInstance?: ComponentInternalInstance
 }
 
@@ -46,7 +26,6 @@ let postFlushIndex = 0
 const resolvedPromise = /*#__PURE__*/ Promise.resolve() as Promise<any>
 let currentFlushPromise: Promise<void> | null = null
 
-type CountMap = Map<SchedulerJob, number>
 
 export function nextTick<T = void>(
   this: T,
@@ -56,23 +35,6 @@ export function nextTick<T = void>(
   return fn ? p.then(this ? fn.bind(this) : fn) : p
 }
 
-// #2768
-// Use binary-search to find a suitable position in the queue,
-// so that the queue maintains the increasing order of job's id,
-// which can prevent the job from being skipped and also can avoid repeated patching.
-// function findInsertionIndex(id: number) {
-//   // the start index should be `flushIndex + 1`
-//   let start = flushIndex + 1
-//   let end = queue.length
-
-//   while (start < end) {
-//     const middle = (start + end) >>> 1
-//     const middleJobId = getId(queue[middle])
-//     middleJobId < id ? (start = middle + 1) : (end = middle)
-//   }
-
-//   return start
-// }
 
 // 直接执行job
 export function queueJob(job: SchedulerJob) {
@@ -84,20 +46,11 @@ export function queueJob(job: SchedulerJob) {
     允许它递归触发自身 - 用户有责任
     确保它不会陷入无限循环。
    */
-  // the dedupe search uses the startIndex argument of Array.includes()
-  // by default the search index includes the current job that is being run
-  // so it cannot recursively trigger itself again.
-  // if the job is a watch() callback, the search will start with a +1 index to
-  // allow it recursively trigger itself - it is the user's responsibility to
-  // ensure it doesn't end up in an infinite loop.
   if (!queue.length || !queue.includes(job, isFlushing && job.allowRecurse ? flushIndex + 1 : flushIndex)) {
     // 如果是用户调用
     if (job.id == null) {
       queue.push(job)
     }
-    // else {
-    //   queue.splice(findInsertionIndex(job.id), 0, job)
-    // }
     queueFlush()
   }
 }
@@ -109,9 +62,6 @@ export function queuePostFlushCb(cb: SchedulerJobs) {
       pendingPostFlushCbs.push(cb)
     }
   } else {
-    // if cb is an array, it is a component lifecycle hook which can only be
-    // triggered by a job, which is already deduped in the main queue, so
-    // we can skip duplicate check here to improve perf
     pendingPostFlushCbs.push(...cb)
   }
   queueFlush()
@@ -124,75 +74,17 @@ function queueFlush() {
   }
 }
 
+const getId = (job: SchedulerJob): number => job.id == null ? Infinity : job.id
 
-export function flushPreFlushCbs(
-  seen?: CountMap,
-  // if currently flushing, skip the current job itself
-  i = isFlushing ? flushIndex + 1 : 0
-) {
-  if (__DEV__) {
-    seen = seen || new Map()
-  }
-  for (; i < queue.length; i++) {
-    const cb = queue[i]
-    if (cb && cb.pre) {
-      // if (__DEV__ && checkRecursiveUpdates(seen!, cb)) {
-      //   continue
-      // }
-      queue.splice(i, 1)
-      i--
-      cb()
-    }
-  }
-}
-
-const getId = (job: SchedulerJob): number =>
-  job.id == null ? Infinity : job.id
-
-const comparator = (a: SchedulerJob, b: SchedulerJob): number => {
-  const diff = getId(a) - getId(b)
-  if (diff === 0) {
-    if (a.pre && !b.pre) return -1
-    if (b.pre && !a.pre) return 1
-  }
-  return diff
-}
-
-function flushJobs(seen?: CountMap) {
+function flushJobs() {
   isFlushPending = false
   isFlushing = true
-  if (__DEV__) {
-    seen = seen || new Map()
-  }
-
-  // Sort queue before flush.
-  // This ensures that:
-  // 1. Components are updated from parent to child. (because parent is always
-  //    created before the child so its render effect will have smaller
-  //    priority number)
-  // 2. If a component is unmounted during a parent component's update,
-  //    its update can be skipped.
-  queue.sort(comparator)
-
-  // conditional usage of checkRecursiveUpdate must be determined out of
-  // try ... catch block since Rollup by default de-optimizes treeshaking
-  // inside try-catch. This can leave all warning code unshaked. Although
-  // they would get eventually shaken by a minifier like terser, some minifiers
-  // would fail to do that (e.g. https://github.com/evanw/esbuild/issues/1610)
-  // const check =
-  //  __DEV__
-  //   ? (job: SchedulerJob) => checkRecursiveUpdates(seen!, job)
-  //   : 
-  //   NOOP
 
   try {
     for (flushIndex = 0; flushIndex < queue.length; flushIndex++) {
       const job = queue[flushIndex]
       if (job && job.active !== false) {
-        // if (__DEV__ && check(job)) {
-        //   continue
-        // }
-        console.log(`running:`, job.id)
+        // 这当中会执行 job
         callWithErrorHandling(job, null, ErrorCodes.SCHEDULER)
       }
     }
@@ -200,20 +92,20 @@ function flushJobs(seen?: CountMap) {
     flushIndex = 0
     queue.length = 0
 
-    flushPostFlushCbs(seen)
+    // 在 dom 渲染之后执行的 job
+    flushPostFlushCbs()
 
     isFlushing = false
     currentFlushPromise = null
-    // some postFlushCb queued jobs!
-    // keep flushing until it drains.
+
     if (queue.length || pendingPostFlushCbs.length) {
-      flushJobs(seen)
+      flushJobs()
     }
-    
+
   }
 }
 
-export function flushPostFlushCbs(seen?: CountMap) {
+export function flushPostFlushCbs() {
   if (pendingPostFlushCbs.length) {
     const deduped = [...new Set(pendingPostFlushCbs)]
     pendingPostFlushCbs.length = 0
@@ -225,26 +117,16 @@ export function flushPostFlushCbs(seen?: CountMap) {
     }
 
     activePostFlushCbs = deduped
-    if (__DEV__) {
-      seen = seen || new Map()
-    }
+
 
     activePostFlushCbs.sort((a, b) => getId(a) - getId(b))
 
-    for (
-      postFlushIndex = 0;
-      postFlushIndex < activePostFlushCbs.length;
-      postFlushIndex++
-    ) {
-      // if (
-      //   __DEV__ &&
-      //   checkRecursiveUpdates(seen!, activePostFlushCbs[postFlushIndex])
-      // ) {
-      //   continue
-      // }
+    for (postFlushIndex = 0; postFlushIndex < activePostFlushCbs.length; postFlushIndex++) {
       activePostFlushCbs[postFlushIndex]()
     }
     activePostFlushCbs = null
     postFlushIndex = 0
   }
 }
+
+

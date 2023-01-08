@@ -251,6 +251,8 @@ function doWatch(
   // 以上的代码都是为收集依赖做铺垫
 
 
+
+  
   let cleanup: () => void
   let onCleanup: OnCleanup = (fn: () => void) => {
     cleanup = effect.onStop = () => {
