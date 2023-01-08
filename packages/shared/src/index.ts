@@ -72,3 +72,11 @@ export const isPlainObject = (val: unknown): val is object => toTypeString(val) 
 export const isPromise = <T = any>(val: unknown): val is Promise<T> => {
   return isObject(val) && isFunction(val.then) && isFunction(val.catch)
 }
+
+// 移除数组元素
+export const remove = <T>(arr: T[], el: T) => {
+  const i = arr.indexOf(el)
+  if (i > -1) {
+    arr.splice(i, 1)
+  }
+}

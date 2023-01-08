@@ -1,8 +1,9 @@
 import { Ref, ComputedRef, isRef, isReactive, isShallow, ReactiveFlags, EffectScheduler, ReactiveEffect } from "@vue/reactivity"
-import { EMPTY_OBJ, hasChanged, isArray, isFunction, isMap, isObject, isPlainObject, isSet, NOOP } from "@vue/shared"
+import { EMPTY_OBJ, hasChanged, isArray, isFunction, isMap, isObject, isPlainObject, isSet, NOOP, remove } from "@vue/shared"
 import { currentInstance } from "./component"
 import { callWithAsyncErrorHandling, callWithErrorHandling, ErrorCodes } from "./errorHandling"
-import { SchedulerJob } from "./scheduler"
+import { queuePostRenderEffect } from "./renderer"
+import { queueJob, SchedulerJob } from "./scheduler"
 
 
 export type WatchEffect = (onCleanup: OnCleanup) => void
@@ -40,11 +41,7 @@ export interface WatchOptions<Immediate = boolean> extends WatchOptionsBase {
 
 export type WatchStopHandle = () => void
 
-
 type MultiWatchSources = (WatchSource<unknown> | object)[]
-
-
-
 
 // overload: array of multiple sources + cb
 export function watch<
@@ -147,6 +144,7 @@ function doWatch(
   { immediate, deep, flush }: WatchOptions = EMPTY_OBJ
 ): WatchStopHandle {
   if (!cb) {
+
     if (immediate !== undefined) {
       console.warn(
         `watch() "immediate" option is only respected when using the ` +
@@ -176,6 +174,7 @@ function doWatch(
   // getter 作为传给 effect 的 fn
   let getter: () => any
   let forceTrigger = false
+  // 数组的一个判断
   let isMultiSource = false
 
   // 首先判断传入的值是不是 ref 实例
@@ -198,7 +197,7 @@ function doWatch(
     // 使数组当中的元素和effect建立依赖关系，保证数组当中元素的变化能够触发 watch 的 cb 执行
     getter = () => source.map(s => {
       if (isRef(s)) {
-        // 如果数组元素是ref实例，直接访问value属性就可以收集依赖，因此访问的位置处于effect当中
+        // 如果数组元素是ref实例，直接访问value属性就可以收集依赖，因此访问的位置处于 effect 当中
         return s.value
       }
       else if (isReactive(s)) {
@@ -241,13 +240,15 @@ function doWatch(
     warnInvalidSource(source)
   }
 
-  // 这里可以弥补传入的值是一个响应式对象的时候，比如 reactive 实例，我们在上方进行判断的时候是没有进行 traverse 的，而且也只有在第一次判断 reactive 实例的时候加了deep = true
+  // 这里可以弥补传入的值是一个响应式对象的时候，比如 reactive 实例，我们在上方进行判断的时候是没有进行 traverse 的
+  // 而且也只有在第一次判断 reactive 实例的时候加了deep = true
   if (cb && deep) {
     const baseGetter = getter // getter = () => source
     // 这里不知道谁他妈设计的，真脑瘫，给爷恶心坏了   
     getter = () => traverse(baseGetter()) // baseGetter()，返回的是 source
   }
 
+  // 以上的代码都是为收集依赖做铺垫
   let cleanup: () => void
   let onCleanup: OnCleanup = (fn: () => void) => {
     cleanup = effect.onStop = () => {
@@ -255,14 +256,17 @@ function doWatch(
     }
   }
 
+  // INITIAL_WATCHER_VALUE = {} ，如果不是数组，那么 oldValue 初始化就等于一个{ },如果是数组，那么 oldValue 中每一个元素值都赋值为 { }
   let oldValue: any = isMultiSource ? new Array((source as []).length).fill(INITIAL_WATCHER_VALUE) : INITIAL_WATCHER_VALUE
-  
+
   const job: SchedulerJob = () => {
     if (!effect.active) {
       return
     }
+    // 如果watch有传入回调函数
     if (cb) {
       // watch(source, cb)
+      // 这里调用 effect.run 方法，获取到run方法执行完毕后的返回值，实际就是 watch 监听的对象（source）
       const newValue = effect.run()
       if (deep || forceTrigger || (isMultiSource ? (newValue as any[]).some((v, i) => hasChanged(v, (oldValue as any[])[i]))
         : hasChanged(newValue, oldValue))
@@ -271,16 +275,15 @@ function doWatch(
         if (cleanup) {
           cleanup()
         }
-        callWithAsyncErrorHandling(cb, instance, ErrorCodes.WATCH_CALLBACK, [
-          newValue,
-          // pass undefined as the old value when it's changed for the first time
-          oldValue === INITIAL_WATCHER_VALUE
-            ? undefined
-            : (isMultiSource && oldValue[0] === INITIAL_WATCHER_VALUE)
-              ? []
-              : oldValue,
-          onCleanup
-        ])
+        // 在这里执行cb，也就是传入给 watch 的回调函数，而 cb 中的 3个参数，就是这里传入的第四个参数，是一个数组，数组一个3个值，就是给cb传入的3个参数
+        callWithAsyncErrorHandling(cb, instance, ErrorCodes.WATCH_CALLBACK,
+          [newValue,
+            // pass undefined as the old value when it's changed for the first time
+            // 假如通过 immediate 开启的立即执行，那么此时的 oldValue === INITIAL_WATCHER_VALUE，那么会给 oldValue 设置为 undefined
+            oldValue === INITIAL_WATCHER_VALUE ? undefined : (isMultiSource && oldValue[0] === INITIAL_WATCHER_VALUE) ? [] : oldValue,
+            onCleanup
+          ])
+        // 当前执行完毕之后的新值作为下一次执行的旧值
         oldValue = newValue
       }
     } else {
@@ -290,7 +293,7 @@ function doWatch(
   }
 
   // important: mark the job as a watcher callback so that scheduler knows
-  // it is allowed to self-trigger (#1727)
+  // it is allowed to self-trigger (#1727) 
   job.allowRecurse = !!cb
 
   let scheduler: EffectScheduler
@@ -299,9 +302,14 @@ function doWatch(
   } else if (flush === 'post') {
     scheduler = () => queuePostRenderEffect(job, instance && instance.suspense)
   } else {
-    // default: 'pre'
+    // 默认为pre
     job.pre = true
-    if (instance) job.id = instance.uid
+    // 这个instance用来判断是组件使用还是用户调用，我们在这里只考虑用户调用的情况
+    // if (instance) 
+    //    job.id = instance.uid
+
+    // 当 wacth 监听的数据发生变化的时候，就会执行 scheduler，内部调用 queueJob，内部再调用 queueFlush，内部再调用 flushJobs，然后执行 job，job 实际上就是回调函数的执行
+    // 为什么要将 scheduler 抽离成 job，因为用户可能开启了 immediate 属性，需要立即执行回调函数，而 job 内部就封装了回调函数的执行，如果开启了该属性。只需调用 job() 即可
     scheduler = () => queueJob(job)
   }
 
@@ -311,6 +319,7 @@ function doWatch(
 
   // initial run
   if (cb) {
+    // 如果开启了 immediate，job，内部会立即执行一次effect.run，run方法执行的是传给 ReactiveEffect 的 fn，在这里就是 getter
     if (immediate) {
       job()
     } else {

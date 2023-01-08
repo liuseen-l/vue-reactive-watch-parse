@@ -3,7 +3,7 @@ import { createDep, Dep, finalizeDepMarkers, initDepMarkers, newTracked, wasTrac
 import { isArray, extend, isMap, isIntegerKey, toNumber } from '@vue/shared'
 import { ComputedRefImpl } from './computed'
 
-
+// run 方法的执行，就是 lazy = true 的实现
 let effectTrackDepth = 0
 
 export let trackOpBit = 1
