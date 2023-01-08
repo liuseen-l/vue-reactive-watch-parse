@@ -2,8 +2,7 @@ import { Ref, ComputedRef, isRef, isReactive, isShallow, ReactiveFlags, EffectSc
 import { EMPTY_OBJ, hasChanged, isArray, isFunction, isMap, isObject, isPlainObject, isSet, NOOP, remove } from "@vue/shared"
 import { currentInstance } from "./component"
 import { callWithAsyncErrorHandling, callWithErrorHandling, ErrorCodes } from "./errorHandling"
-import { queuePostRenderEffect } from "./renderer"
-import { queueJob, SchedulerJob } from "./scheduler"
+import { queueJob, queuePostFlushCb, SchedulerJob } from "./scheduler"
 
 
 export type WatchEffect = (onCleanup: OnCleanup) => void
@@ -137,6 +136,8 @@ const INITIAL_WATCHER_VALUE = {}
 // }
 
 
+// run 是收集依赖，并将监听的 source 作为 oldValue或newValue
+// scheduler 内部执行job ，job 执行实际就是执行 cb
 // source 可以是一个getter函数 也可以是一个响应式对象
 function doWatch(
   source: WatchSource | WatchSource[] | WatchEffect | object,
@@ -247,8 +248,9 @@ function doWatch(
     // 这里不知道谁他妈设计的，真脑瘫，给爷恶心坏了   
     getter = () => traverse(baseGetter()) // baseGetter()，返回的是 source
   }
-
   // 以上的代码都是为收集依赖做铺垫
+
+
   let cleanup: () => void
   let onCleanup: OnCleanup = (fn: () => void) => {
     cleanup = effect.onStop = () => {
@@ -268,6 +270,7 @@ function doWatch(
       // watch(source, cb)
       // 这里调用 effect.run 方法，获取到run方法执行完毕后的返回值，实际就是 watch 监听的对象（source）
       const newValue = effect.run()
+      // 
       if (deep || forceTrigger || (isMultiSource ? (newValue as any[]).some((v, i) => hasChanged(v, (oldValue as any[])[i]))
         : hasChanged(newValue, oldValue))
       ) {
@@ -279,7 +282,7 @@ function doWatch(
         callWithAsyncErrorHandling(cb, instance, ErrorCodes.WATCH_CALLBACK,
           [newValue,
             // pass undefined as the old value when it's changed for the first time
-            // 假如通过 immediate 开启的立即执行，那么此时的 oldValue === INITIAL_WATCHER_VALUE，那么会给 oldValue 设置为 undefined
+            // 假如通过 immediate 开启的立即执行，那么此时的 oldValue === INITIAL_WATCHER_VALUE，第一次回调执行时没有所谓的旧值，因此此时回调函数的oldValue 值为 undefined，因此在这里进行一个旧值的赋值
             oldValue === INITIAL_WATCHER_VALUE ? undefined : (isMultiSource && oldValue[0] === INITIAL_WATCHER_VALUE) ? [] : oldValue,
             onCleanup
           ])
@@ -299,8 +302,10 @@ function doWatch(
   let scheduler: EffectScheduler
   if (flush === 'sync') {
     scheduler = job as any // the scheduler function gets called directly
-  } else if (flush === 'post') {
-    scheduler = () => queuePostRenderEffect(job, instance && instance.suspense)
+  }
+  // flush 本质上是在指定调度函数的执行时机，当 flush 的值为 'post' 时，代表调度函数需要将副作用函数放到一个微任务队列中，并等待 DOM 更新结束后再执行
+  else if (flush === 'post') {
+    scheduler = () => queuePostFlushCb(job)
   } else {
     // 默认为pre
     job.pre = true
@@ -316,20 +321,17 @@ function doWatch(
   // 核心调用 effect ，传入 getter 作为fn
   const effect = new ReactiveEffect(getter, scheduler)
 
-
   // initial run
   if (cb) {
     // 如果开启了 immediate，job，内部会立即执行一次effect.run，run方法执行的是传给 ReactiveEffect 的 fn，在这里就是 getter
     if (immediate) {
       job()
     } else {
+      // 执行effect，进行依赖的收集，这里返回的就是监听的对象，即 source
       oldValue = effect.run()
     }
   } else if (flush === 'post') {
-    queuePostRenderEffect(
-      effect.run.bind(effect),
-      instance && instance.suspense
-    )
+    queuePostFlushCb(effect.run.bind(effect))
   } else {
     effect.run()
   }

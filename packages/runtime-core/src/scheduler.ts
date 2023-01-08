@@ -74,6 +74,7 @@ export function nextTick<T = void>(
 //   return start
 // }
 
+// 直接执行job
 export function queueJob(job: SchedulerJob) {
   /**
     重复数据删除搜索使用 Array.include（） 的 startIndex 参数
@@ -101,20 +102,7 @@ export function queueJob(job: SchedulerJob) {
   }
 }
 
-function queueFlush() {
-  if (!isFlushing && !isFlushPending) {
-    isFlushPending = true
-    currentFlushPromise = resolvedPromise.then(flushJobs)
-  }
-}
-
-export function invalidateJob(job: SchedulerJob) {
-  const i = queue.indexOf(job)
-  if (i > flushIndex) {
-    queue.splice(i, 1)
-  }
-}
-
+// dom更新完毕执行job
 export function queuePostFlushCb(cb: SchedulerJobs) {
   if (!isArray(cb)) {
     if (!activePostFlushCbs || !activePostFlushCbs.includes(cb, cb.allowRecurse ? postFlushIndex + 1 : postFlushIndex)) {
@@ -128,6 +116,14 @@ export function queuePostFlushCb(cb: SchedulerJobs) {
   }
   queueFlush()
 }
+
+function queueFlush() {
+  if (!isFlushing && !isFlushPending) {
+    isFlushPending = true
+    currentFlushPromise = resolvedPromise.then(flushJobs)
+  }
+}
+
 
 export function flushPreFlushCbs(
   seen?: CountMap,
@@ -147,42 +143,6 @@ export function flushPreFlushCbs(
       i--
       cb()
     }
-  }
-}
-
-export function flushPostFlushCbs(seen?: CountMap) {
-  if (pendingPostFlushCbs.length) {
-    const deduped = [...new Set(pendingPostFlushCbs)]
-    pendingPostFlushCbs.length = 0
-
-    // #1947 already has active queue, nested flushPostFlushCbs call
-    if (activePostFlushCbs) {
-      activePostFlushCbs.push(...deduped)
-      return
-    }
-
-    activePostFlushCbs = deduped
-    if (__DEV__) {
-      seen = seen || new Map()
-    }
-
-    activePostFlushCbs.sort((a, b) => getId(a) - getId(b))
-
-    for (
-      postFlushIndex = 0;
-      postFlushIndex < activePostFlushCbs.length;
-      postFlushIndex++
-    ) {
-      // if (
-      //   __DEV__ &&
-      //   checkRecursiveUpdates(seen!, activePostFlushCbs[postFlushIndex])
-      // ) {
-      //   continue
-      // }
-      activePostFlushCbs[postFlushIndex]()
-    }
-    activePostFlushCbs = null
-    postFlushIndex = 0
   }
 }
 
@@ -253,3 +213,38 @@ function flushJobs(seen?: CountMap) {
   }
 }
 
+export function flushPostFlushCbs(seen?: CountMap) {
+  if (pendingPostFlushCbs.length) {
+    const deduped = [...new Set(pendingPostFlushCbs)]
+    pendingPostFlushCbs.length = 0
+
+    // #1947 already has active queue, nested flushPostFlushCbs call
+    if (activePostFlushCbs) {
+      activePostFlushCbs.push(...deduped)
+      return
+    }
+
+    activePostFlushCbs = deduped
+    if (__DEV__) {
+      seen = seen || new Map()
+    }
+
+    activePostFlushCbs.sort((a, b) => getId(a) - getId(b))
+
+    for (
+      postFlushIndex = 0;
+      postFlushIndex < activePostFlushCbs.length;
+      postFlushIndex++
+    ) {
+      // if (
+      //   __DEV__ &&
+      //   checkRecursiveUpdates(seen!, activePostFlushCbs[postFlushIndex])
+      // ) {
+      //   continue
+      // }
+      activePostFlushCbs[postFlushIndex]()
+    }
+    activePostFlushCbs = null
+    postFlushIndex = 0
+  }
+}
