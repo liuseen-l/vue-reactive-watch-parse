@@ -16,16 +16,19 @@ export type SchedulerJobs = SchedulerJob | SchedulerJob[]
 let isFlushing = false
 let isFlushPending = false
 
+// 存放 flush = pre | sync 的 job
 const queue: SchedulerJob[] = []
 let flushIndex = 0
 
+// 存放 flush = post 的 job
 const pendingPostFlushCbs: SchedulerJob[] = []
-let activePostFlushCbs: SchedulerJob[] | null = null
 let postFlushIndex = 0
+
+let activePostFlushCbs: SchedulerJob[] | null = null
+
 
 const resolvedPromise = /*#__PURE__*/ Promise.resolve() as Promise<any>
 let currentFlushPromise: Promise<void> | null = null
-
 
 export function nextTick<T = void>(
   this: T,
@@ -35,6 +38,22 @@ export function nextTick<T = void>(
   return fn ? p.then(this ? fn.bind(this) : fn) : p
 }
 
+// 当 watch 设置为 pre 的时候执行的，这个和组件的渲染有关，不太好展示
+export function flushPreFlushCbs(
+  // if currently flushing, skip the current job itself
+  i = isFlushing ? flushIndex + 1 : 0
+) {
+  for (; i < queue.length; i++) {
+    // cb 实际上就是 job
+    const cb = queue[i]
+    
+    if (cb && cb.pre) {
+      queue.splice(i, 1)
+      i--
+      cb()
+    }
+  }
+}
 
 // 直接执行job
 export function queueJob(job: SchedulerJob) {
@@ -59,6 +78,7 @@ export function queueJob(job: SchedulerJob) {
 export function queuePostFlushCb(cb: SchedulerJobs) {
   if (!isArray(cb)) {
     if (!activePostFlushCbs || !activePostFlushCbs.includes(cb, cb.allowRecurse ? postFlushIndex + 1 : postFlushIndex)) {
+      // dom 渲染之后执行的 job 队列
       pendingPostFlushCbs.push(cb)
     }
   } else {
@@ -77,7 +97,9 @@ function queueFlush() {
 const getId = (job: SchedulerJob): number => job.id == null ? Infinity : job.id
 
 function flushJobs() {
+  // 等待中
   isFlushPending = false
+  // 清空中
   isFlushing = true
 
   try {
@@ -89,7 +111,9 @@ function flushJobs() {
       }
     }
   } finally {
+    // 重置job访问下标
     flushIndex = 0
+    // 清空 queue 队列中的 job
     queue.length = 0
 
     // 在 dom 渲染之后执行的 job

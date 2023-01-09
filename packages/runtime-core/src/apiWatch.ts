@@ -139,6 +139,7 @@ const INITIAL_WATCHER_VALUE = {}
 // run 是收集依赖，并将监听的 source 作为 oldValue或newValue
 // scheduler 内部执行job ，job 执行实际就是执行 cb
 // source 可以是一个getter函数 也可以是一个响应式对象
+// 目前vue3版本中将pre设为了默认值，因此 watch 当中的 cb 都是在组件更新之前执行，这和render有关，为了解耦，我们在这里将默认值设置为 sync
 function doWatch(
   source: WatchSource | WatchSource[] | WatchEffect | object,
   cb: WatchCallback | null,
@@ -307,22 +308,19 @@ function doWatch(
     语义指的就是组件更新前和更新后 
     sync立即执行 -> pre更新之前 -> post更新之后，默认现在是 pre
   */
-  if (flush === 'sync') {
-    scheduler = job as any // 立即执行
+  if (flush === 'pre') {
+    // 默认为pre
+    job.pre = true
+    // 当 wacth 监听的数据发生变化的时候，就会执行 scheduler，内部调用 queueJob，内部再调用 queueFlush，内部再调用 flushJobs，然后执行 job，job 实际上就是回调函数的执行
+    // 为什么要将 scheduler 抽离成 job，因为用户可能开启了 immediate 属性，需要立即执行回调函数，而 job 内部就封装了回调函数的执行，如果开启了该属性。只需调用 job() 即可
+    scheduler = () => queueJob(job)
   }
   // flush 本质上是在指定调度函数的执行时机，当 flush 的值为 'post' 时，代表调度函数需要将副作用函数放到一个微任务队列中，并等待 DOM 更新结束后再执行
   else if (flush === 'post') {
     scheduler = () => queuePostFlushCb(job)
   } else {
-    // 默认为pre
-    job.pre = true
-    // 这个instance用来判断是组件使用还是用户调用，我们在这里只考虑用户调用的情况
-    // if (instance) 
-    //    job.id = instance.uid
-
-    // 当 wacth 监听的数据发生变化的时候，就会执行 scheduler，内部调用 queueJob，内部再调用 queueFlush，内部再调用 flushJobs，然后执行 job，job 实际上就是回调函数的执行
-    // 为什么要将 scheduler 抽离成 job，因为用户可能开启了 immediate 属性，需要立即执行回调函数，而 job 内部就封装了回调函数的执行，如果开启了该属性。只需调用 job() 即可
-    scheduler = () => queueJob(job)
+    // 在这里为了解耦我们将 sync 设置为了默认
+    scheduler = job as any // 立即执行
   }
 
   // 核心调用 effect ，传入 getter 作为fn
@@ -337,12 +335,9 @@ function doWatch(
       // 执行effect，进行依赖的收集，这里返回的就是监听的对象，即 source
       oldValue = effect.run()
     }
-  } else if (flush === 'post') {
-    queuePostFlushCb(effect.run.bind(effect))
-  } else {
-    effect.run()
   }
 
+  // 停止监听
   const unwatch = () => {
     effect.stop()
     if (instance && instance.scope) {
