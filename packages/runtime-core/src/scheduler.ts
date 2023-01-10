@@ -117,13 +117,13 @@ function flushJobs(seen: CountMap) {
     for (flushIndex = 0; flushIndex < queue.length; flushIndex++) {
       const job = queue[flushIndex]
       if (job && job.active !== false) {
-        if (true && check(job)) {
+        if (check(job)) {
           continue
         }
         callWithErrorHandling(job, null, ErrorCodes.SCHEDULER)
       }
     }
-    
+
     // 传给 onBeforeUpdate 的回调中访问依然是之前的，但是执行完 onBeforeUpdate 之后，实际 dom 已经更新了
     // 正如 onBeforeUpdate（失去响应式之前，dom更新之前） onUpdated（dom 更新之后） 的定义一样
   } finally {
@@ -135,7 +135,7 @@ function flushJobs(seen: CountMap) {
 
     // 在 dom 渲染之后执行的 job
     flushPostFlushCbs(seen)
-    
+
     isFlushing = false
     currentFlushPromise = null
 
@@ -171,10 +171,7 @@ export function flushPostFlushCbs(seen: CountMap) {
       postFlushIndex < activePostFlushCbs.length;
       postFlushIndex++
     ) {
-      if (
-        true &&
-        checkRecursiveUpdates(seen!, activePostFlushCbs[postFlushIndex])
-      ) {
+      if (checkRecursiveUpdates(seen!, activePostFlushCbs[postFlushIndex])) {
         continue
       }
       activePostFlushCbs[postFlushIndex]()

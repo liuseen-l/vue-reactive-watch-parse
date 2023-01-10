@@ -10,7 +10,6 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@vue/reactivity": "workspace:^1.0.0",
     "@vue/shared": "workspace:^1.0.0"
   }
 }

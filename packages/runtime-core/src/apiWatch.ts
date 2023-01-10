@@ -256,17 +256,38 @@ function doWatch(
   // 以上的代码都是为收集依赖做铺垫
 
 
+
+
+  // cleanup 用来存储用户注册的过期回调   
   let cleanup: () => void
+
+  // watch(obj, async (newValue, oldValue, onCleanup) => {
+  //   // 定义一个标志，代表当前副作用函数是否过期，默认为 false，代表没有过期
+  //   let expired = false
+  //   // 调用 onCleanup() 函数注册一个过期回调
+  //   onCleanup(() => {
+  //     // 当过期时，将 expired 设置为 true
+  //     expired = true
+  //   })
+  //   // 发送网络请求
+  //   const res = await fetch('/path/to/request')
+  //   // 只有当该副作用函数的执行没有过期时，才会执行后续操作。
+  //   if (!expired) {
+  //     finalData = res
+  //   }
+  // })
   let onCleanup: OnCleanup = (fn: () => void) => {
+    // 将过期回调存储到 cleanup 中
     cleanup = effect.onStop = () => {
       callWithErrorHandling(fn, instance, ErrorCodes.WATCH_CLEANUP)
     }
-  }
+  }   
 
   // INITIAL_WATCHER_VALUE = {} ，如果不是数组，那么 oldValue 初始化就等于一个{ },如果是数组，那么 oldValue 中每一个元素值都赋值为 { }
   let oldValue: any = isMultiSource ? new Array((source as []).length).fill(INITIAL_WATCHER_VALUE) : INITIAL_WATCHER_VALUE
 
   const job: SchedulerJob = () => {
+    
     if (!effect.active) {
       return
     }
@@ -279,7 +300,7 @@ function doWatch(
       if (deep || forceTrigger || (isMultiSource ? (newValue as any[]).some((v, i) => hasChanged(v, (oldValue as any[])[i]))
         : hasChanged(newValue, oldValue))
       ) {
-        // cleanup before running cb again
+        // 在调用回调函数 cb 之前，先调用过期回调，第一次执行 job 的时候此时 cleanup 等于 undefined
         if (cleanup) {
           cleanup()
         }
@@ -289,6 +310,7 @@ function doWatch(
             // pass undefined as the old value when it's changed for the first time
             // 假如通过 immediate 开启的立即执行，那么此时的 oldValue === INITIAL_WATCHER_VALUE，第一次回调执行时没有所谓的旧值，因此此时回调函数的oldValue 值为 undefined，因此在这里进行一个旧值的赋值
             oldValue === INITIAL_WATCHER_VALUE ? undefined : (isMultiSource && oldValue[0] === INITIAL_WATCHER_VALUE) ? [] : oldValue,
+            // 将清除函数传递给用户（接受一个函数参数），用户可以向其中传入函数
             onCleanup
           ])
         // 当前执行完毕之后的新值作为下一次执行的旧值
