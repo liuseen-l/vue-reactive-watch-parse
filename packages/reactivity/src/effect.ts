@@ -1,6 +1,6 @@
 import { TrackOpTypes, TriggerOpTypes } from './operations'
 import { createDep, Dep, finalizeDepMarkers, initDepMarkers, newTracked, wasTracked } from './dep'
-import { isArray, extend, isMap, isIntegerKey, toNumber } from '@vue/shared'
+import { isArray, extend, isMap, isIntegerKey } from '@vue/shared'
 import { ComputedRefImpl } from './computed'
 
 // run 方法的执行，就是 lazy = true 的实现
@@ -181,6 +181,7 @@ export class ReactiveEffect<T = any> {
     if (this.active) // 如果effect是激活的采取将deps上的effect移除
     {
       cleanupEffect(this)
+      // 如果 watch 当中涉及竞态问题，那么可以在这里执行 onStop,而 onStop 的执行实际上是执行用户传入给 onCleanup 的过期回调
       if (this.onStop) {
         this.onStop()
       }

@@ -161,15 +161,16 @@ export const toReactive = <T extends unknown>(value: T): T =>
   // 如果传入的原始数据不是对象类型,那么直接返回该数据
   isObject(value) ? reactive(value as object) : value
 
-
 export const toReadonly = <T extends unknown>(value: T): T =>
   isObject(value) ? readonly(value as Record<any, any>) : value
 
+export function isProxy(value: unknown): boolean {
+  return isReactive(value) || isReadonly(value)
+}
 
 export function isReadonly(value: unknown): boolean {
   return !!(value && (value as Target)[ReactiveFlags.IS_READONLY])
 }
-
 export function isShallow(value: unknown): boolean {
   return !!(value && (value as Target)[ReactiveFlags.IS_SHALLOW])
 }

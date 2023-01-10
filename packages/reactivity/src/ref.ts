@@ -1,6 +1,6 @@
 import { createDep, Dep } from './dep'
-import { hasChanged, isObject } from '@vue/shared'
-import { isReadonly, isShallow, toRaw, toReactive } from './reactive'
+import { hasChanged, IfAny, isArray  } from '@vue/shared'
+import { isProxy, isReadonly, isShallow, toRaw, toReactive } from './reactive'
 import { activeEffect, shouldTrack, trackEffects, triggerEffects } from './effect'
 
 declare const RefSymbol: unique symbol
@@ -102,7 +102,6 @@ function createRef(rawValue: unknown, shallow: boolean) {
      *
      * 对于情况三来说, ref 是深层次的相应，但是传入的值是只读的相应对象的时候比如 readonly，我们也可以直接将起赋值给 ref 的 value 值，因为本身就是响应式的我们不需要再去转换响应式                                      
      * 
-     * 
      *  */
     const useDirectValue = this.__v_isShallow || isShallow(newVal) || isReadonly(newVal)
 
@@ -114,7 +113,7 @@ function createRef(rawValue: unknown, shallow: boolean) {
      * 
      */
     newVal = useDirectValue ? newVal : toRaw(newVal)
-    
+
     // 判断传入的数据是否发生了变化，如果是reactive类型的话，这里是经过 toRaw 转换的，ref 实例如果保存的结果为 reactive 类型的话，那么它的 _rawValue 始终是指向
     if (hasChanged(newVal, this._rawValue)) {
       this._rawValue = newVal
@@ -146,7 +145,7 @@ export function trackRefValue(ref: RefBase<any>) {
 }
 
 export function triggerRefValue(ref: RefBase<any>, newVal?: any) {
-  ref = toRaw(ref)   
+  ref = toRaw(ref)
 
   // 首先判断当前的ref实例上是否有收集过依赖
   if (ref.dep) {
@@ -155,3 +154,106 @@ export function triggerRefValue(ref: RefBase<any>, newVal?: any) {
   }
 }
 
+// 自定义计算属性
+
+class CustomRefImpl<T> {
+  public dep?: Dep = undefined
+
+  private readonly _get: ReturnType<CustomRefFactory<T>>['get']
+  private readonly _set: ReturnType<CustomRefFactory<T>>['set']
+
+  public readonly __v_isRef = true
+
+  constructor(factory: CustomRefFactory<T>) {
+    const { get, set } = factory(
+      () => trackRefValue(this),
+      () => triggerRefValue(this)
+    )
+    this._get = get
+    this._set = set
+  }
+
+  get value() {
+    return this._get()
+  }
+
+  set value(newVal) {
+    this._set(newVal)
+  }
+}
+
+export type CustomRefFactory<T> = (
+  track: () => void,
+  trigger: () => void
+) => {
+  get: () => T
+  set: (value: T) => void
+}
+
+export function customRef<T>(factory: CustomRefFactory<T>): Ref<T> {
+  return new CustomRefImpl(factory) as any
+}
+
+
+// toRef
+
+class ObjectRefImpl<T extends object, K extends keyof T> {
+  public readonly __v_isRef = true
+  /**
+  * 假设
+  *   _object = reactive({ a : 1})
+  *   _key = a 
+  */
+  constructor(
+    private readonly _object: T,
+    private readonly _key: K,
+    private readonly _defaultValue?: T[K]
+  ) { }
+
+  get value() {
+    //  value = reactive({a:1}).a 触发track
+    const val = this._object[this._key]
+    return val === undefined ? (this._defaultValue as T[K]) : val
+  }
+
+  set value(newVal) {
+    // reactive({a:1}).a = newVal，触发 trigger
+    this._object[this._key] = newVal
+  }
+}
+
+export type ToRef<T> = IfAny<T, Ref<T>, [T] extends [Ref] ? T : Ref<T>>
+
+
+export function toRef<T extends object, K extends keyof T>(object: T, key: K): ToRef<T[K]>
+export function toRef<T extends object, K extends keyof T>(object: T, key: K, defaultValue: T[K]): ToRef<Exclude<T[K], undefined>>
+export function toRef<T extends object, K extends keyof T>(object: T, key: K, defaultValue?: T[K]): ToRef<T[K]> {
+  const val = object[key]
+  // 判断 val 是否为 ref 实例，如果是 ref 实例直接返回 val
+  return isRef(val) ? val : (new ObjectRefImpl(object, key, defaultValue) as any)
+}
+
+
+//  toRefs
+export type ToRefs<T = any> = {
+  [K in keyof T]: ToRef<T[K]>
+}
+
+export function toRefs<T extends object>(object: T): ToRefs<T> {
+  // 判断传入的值是否为响应式对象
+  if (!isProxy(object)) {
+    console.warn(`toRefs() expects a reactive object but received a plain one.`)
+  }
+  // 判断传入的值是否为数组，如果是数组，创建一个原始数组，反之返回{}
+  const ret: any = isArray(object) ? new Array(object.length) : {}
+  // 遍历传入值的 key，如果是数组的话，key 就是下标，如果是对象的话就是 key
+  /**
+   *  如果是响应式对象
+   *    const key = isArray(target) ? 'length' : ITERATE_KEY
+   *    track(target, key, TrackOpTypes.ITERATE) 会收集依赖，如果 object 发生变化会重新执行 toRefs，因为 toRefs 实际上也在 effect 当中的
+   *  */ 
+  for (const key in object) {
+    ret[key] = toRef(object, key)
+  }
+  return ret
+}
