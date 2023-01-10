@@ -26,9 +26,11 @@ let postFlushIndex = 0
 
 let activePostFlushCbs: SchedulerJob[] | null = null
 
-
 const resolvedPromise = /*#__PURE__*/ Promise.resolve() as Promise<any>
 let currentFlushPromise: Promise<void> | null = null
+
+
+type CountMap = Map<SchedulerJob, number>
 
 export function nextTick<T = void>(
   this: T,
@@ -46,7 +48,6 @@ export function flushPreFlushCbs(
   for (; i < queue.length; i++) {
     // cb 实际上就是 job
     const cb = queue[i]
-    
     if (cb && cb.pre) {
       queue.splice(i, 1)
       i--
@@ -74,7 +75,7 @@ export function queueJob(job: SchedulerJob) {
   }
 }
 
-// dom更新完毕执行job
+// dom 更新完毕执行 job
 export function queuePostFlushCb(cb: SchedulerJobs) {
   if (!isArray(cb)) {
     if (!activePostFlushCbs || !activePostFlushCbs.includes(cb, cb.allowRecurse ? postFlushIndex + 1 : postFlushIndex)) {
@@ -96,40 +97,56 @@ function queueFlush() {
 
 const getId = (job: SchedulerJob): number => job.id == null ? Infinity : job.id
 
-function flushJobs() {
+// 当 flush = pre 或者 post 才会执行这个函数
+function flushJobs(seen: CountMap) {
   // 等待中
   isFlushPending = false
   // 清空中
   isFlushing = true
 
+  {
+    seen = seen || new Map();
+  }
+
+  // 检查递归更新
+  const check = (job: SchedulerJob) => checkRecursiveUpdates(seen, job)
+
   try {
+    // 这当中会执行 job,当flush = pre 的时候，job就是这里执行的，执行完 watch 的 pre job 之后，onBeforeUpdate就开始执行，onBeforeUpDate 的回调函数也在 queue 中
+    // 虽然 preJob 先执行了，也就是数据已经发生了变化，但是还没有渲染真实 dom ，因此这里如果显示数据会更新，但是访问dom还是没有更新，vue数据更新是同步的，dom更新是异步的（需要进行虚拟dom比较操作再更新）
     for (flushIndex = 0; flushIndex < queue.length; flushIndex++) {
       const job = queue[flushIndex]
       if (job && job.active !== false) {
-        // 这当中会执行 job
+        if (true && check(job)) {
+          continue
+        }
         callWithErrorHandling(job, null, ErrorCodes.SCHEDULER)
       }
     }
+    
+    // 传给 onBeforeUpdate 的回调中访问依然是之前的，但是执行完 onBeforeUpdate 之后，实际 dom 已经更新了
+    // 正如 onBeforeUpdate（失去响应式之前，dom更新之前） onUpdated（dom 更新之后） 的定义一样
   } finally {
-    // 重置job访问下标
+    // 重置 job 访问下标
     flushIndex = 0
+
     // 清空 queue 队列中的 job
     queue.length = 0
 
     // 在 dom 渲染之后执行的 job
-    flushPostFlushCbs()
-
+    flushPostFlushCbs(seen)
+    
     isFlushing = false
     currentFlushPromise = null
 
     if (queue.length || pendingPostFlushCbs.length) {
-      flushJobs()
+      flushJobs(seen)
     }
 
   }
 }
 
-export function flushPostFlushCbs() {
+export function flushPostFlushCbs(seen: CountMap) {
   if (pendingPostFlushCbs.length) {
     const deduped = [...new Set(pendingPostFlushCbs)]
     pendingPostFlushCbs.length = 0
@@ -142,15 +159,42 @@ export function flushPostFlushCbs() {
 
     activePostFlushCbs = deduped
 
+    {
+      seen = seen || new Map()
+    }
 
     activePostFlushCbs.sort((a, b) => getId(a) - getId(b))
 
-    for (postFlushIndex = 0; postFlushIndex < activePostFlushCbs.length; postFlushIndex++) {
+    // 执行 watch 中 flush = post 以及 onUpdated 的回调函数，先执行 postJob，再执行 watch 回调
+    for (
+      postFlushIndex = 0;
+      postFlushIndex < activePostFlushCbs.length;
+      postFlushIndex++
+    ) {
+      if (
+        true &&
+        checkRecursiveUpdates(seen!, activePostFlushCbs[postFlushIndex])
+      ) {
+        continue
+      }
       activePostFlushCbs[postFlushIndex]()
     }
+
     activePostFlushCbs = null
     postFlushIndex = 0
   }
 }
 
-
+const RECURSION_LIMIT = 100
+function checkRecursiveUpdates(seen: CountMap, fn: SchedulerJob) {
+  if (!seen.has(fn)) {
+    seen.set(fn, 1)
+  } else {
+    const count = seen.get(fn)!
+    if (count > RECURSION_LIMIT) {
+      return true
+    } else {
+      seen.set(fn, count + 1)
+    }
+  }
+}

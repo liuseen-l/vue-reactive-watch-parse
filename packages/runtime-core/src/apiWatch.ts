@@ -139,27 +139,11 @@ const INITIAL_WATCHER_VALUE = {}
 // run 是收集依赖，并将监听的 source 作为 oldValue或newValue
 // scheduler 内部执行job ，job 执行实际就是执行 cb
 // source 可以是一个getter函数 也可以是一个响应式对象
-// 目前vue3版本中将pre设为了默认值，因此 watch 当中的 cb 都是在组件更新之前执行，这和render有关，为了解耦，我们在这里将默认值设置为 sync
 function doWatch(
   source: WatchSource | WatchSource[] | WatchEffect | object,
   cb: WatchCallback | null,
   { immediate, deep, flush }: WatchOptions = EMPTY_OBJ
 ): WatchStopHandle {
-  if (!cb) {
-
-    if (immediate !== undefined) {
-      console.warn(
-        `watch() "immediate" option is only respected when using the ` +
-        `watch(source, callback, options?) signature.`
-      )
-    }
-    if (deep !== undefined) {
-      console.warn(
-        `watch() "deep" option is only respected when using the ` +
-        `watch(source, callback, options?) signature.`
-      )
-    }
-  }
 
   const warnInvalidSource = (s: unknown) => {
     console.warn(
@@ -216,7 +200,7 @@ function doWatch(
   // 如果传入的值是一个函数，在函数内部，用户可以指定该 watch 依赖哪些响应式数据，只有当这些数据变化时，才会触发回调函数执行
   else if (isFunction(source)) {
     if (cb) {
-      // 如果元素是函数，表明我们要监听一个函数，调用 callWithErrorHandling，当中会调用s()，并返回调用的结果，如果s()调用过程中也涉及到响应式对象，那么就会与effect建立依赖关系
+      // 如果元素是函数，表明我们要监听一个函数，调用 callWithErrorHandling，当中会调用source()，并返回调用的结果，如果source()调用过程中也涉及到响应式对象，那么就会与effect建立依赖关系
       getter = () => callWithErrorHandling(source, instance, ErrorCodes.WATCH_GETTER)
     } else {
       // 如果调用 watch的时候，没有传入回调函数 scheduler 
@@ -244,6 +228,26 @@ function doWatch(
 
   // 这里可以弥补传入的值是一个响应式对象的时候，比如 reactive 实例，我们在上方进行判断的时候是没有进行 traverse 的
   // 而且也只有在第一次判断 reactive 实例的时候加了deep = true
+  // 如果用户传入了 deep = true 也会执行
+  /** 
+   * 当使用 getter 函数作为源时，回调只在此函数的返回值变化时才会触发。如果想让回调在深层级变更时也能触发，
+   * 需要使用 { deep: true } 强制侦听器进入深层级模式。在深层级模式时，如果回调函数由于深层级的变更而被触发，那么新值和旧值将是同一个对象。
+   * 
+   * const state = reactive({ count: 0 })
+   * watch(
+   *   () => state,
+   *   (newValue, oldValue) => {
+   *     // newValue === oldValue
+   *   },
+   *   { deep: true }
+   * )
+   * 
+   * 当直接侦听一个响应式对象时，侦听器会自动启用深层模式：
+   * const state = reactive({ count: 0 })
+   * watch(state, () => {
+   *   // 深层级变更状态所触发的回调 
+   * })
+  */
   if (cb && deep) {
     const baseGetter = getter // getter = () => source
     // 这里不知道谁他妈设计的，真脑瘫，给爷恶心坏了   
@@ -308,19 +312,18 @@ function doWatch(
     语义指的就是组件更新前和更新后 
     sync立即执行 -> pre更新之前 -> post更新之后，默认现在是 pre
   */
-  if (flush === 'pre') {
-    // 默认为pre
-    job.pre = true
-    // 当 wacth 监听的数据发生变化的时候，就会执行 scheduler，内部调用 queueJob，内部再调用 queueFlush，内部再调用 flushJobs，然后执行 job，job 实际上就是回调函数的执行
-    // 为什么要将 scheduler 抽离成 job，因为用户可能开启了 immediate 属性，需要立即执行回调函数，而 job 内部就封装了回调函数的执行，如果开启了该属性。只需调用 job() 即可
-    scheduler = () => queueJob(job)
+  if (flush === 'sync') {
+    scheduler = job as any // 立即执行
   }
   // flush 本质上是在指定调度函数的执行时机，当 flush 的值为 'post' 时，代表调度函数需要将副作用函数放到一个微任务队列中，并等待 DOM 更新结束后再执行
   else if (flush === 'post') {
     scheduler = () => queuePostFlushCb(job)
   } else {
-    // 在这里为了解耦我们将 sync 设置为了默认
-    scheduler = job as any // 立即执行
+    // 默认为pre
+    job.pre = true
+    // 当 wacth 监听的数据发生变化的时候，就会执行 scheduler，内部调用 queueJob，内部再调用 queueFlush，内部再调用 flushJobs，然后执行 job，job 实际上就是回调函数的执行
+    // 为什么要将 scheduler 抽离成 job，因为用户可能开启了 immediate 属性，需要立即执行回调函数，而 job 内部就封装了回调函数的执行，如果开启了该属性。只需调用 job() 即可
+    scheduler = () => queueJob(job)
   }
 
   // 核心调用 effect ，传入 getter 作为fn

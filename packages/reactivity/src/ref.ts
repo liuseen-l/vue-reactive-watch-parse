@@ -146,7 +146,7 @@ export function trackRefValue(ref: RefBase<any>) {
 }
 
 export function triggerRefValue(ref: RefBase<any>, newVal?: any) {
-  ref = toRaw(ref)
+  ref = toRaw(ref)   
 
   // 首先判断当前的ref实例上是否有收集过依赖
   if (ref.dep) {
