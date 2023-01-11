@@ -94,7 +94,8 @@ export class ComputedRefImpl<T> {
   }
 
   set value(newValue: T) {
-    this._setter(newValue) // 如果修改计算属性的值就走setter
+    // 如果修改计算属性的值就走 setter
+    this._setter(newValue)
   }
 }
 

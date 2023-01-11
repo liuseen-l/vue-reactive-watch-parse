@@ -4,6 +4,7 @@ importers:
 
   .:
     specifiers:
+      '@rollup/plugin-alias': ^4.0.2
       '@rollup/plugin-commonjs': ^21.0.1
       '@rollup/plugin-json': ^4.1.0
       '@rollup/plugin-node-resolve': ^13.0.6
@@ -23,6 +24,7 @@ importers:
       vite: registry.npmmirror.com/vite/3.2.4
       vitest: registry.npmmirror.com/vitest/0.24.3_@vitest+ui@0.25.2
     devDependencies:
+      '@rollup/plugin-alias': registry.npmmirror.com/@rollup/plugin-alias/4.0.2_rollup@2.60.0
       '@rollup/plugin-commonjs': registry.npmmirror.com/@rollup/plugin-commonjs/21.0.1_rollup@2.60.0
       '@rollup/plugin-json': registry.npmmirror.com/@rollup/plugin-json/4.1.0_rollup@2.60.0
       '@rollup/plugin-node-resolve': registry.npmmirror.com/@rollup/plugin-node-resolve/13.0.6_rollup@2.60.0
@@ -41,8 +43,10 @@ importers:
 
   packages/runtime-core:
     specifiers:
+      '@vue/reactivity': ^3.2.45
       '@vue/shared': workspace:^1.0.0
     dependencies:
+      '@vue/reactivity': registry.npmmirror.com/@vue/reactivity/3.2.45
       '@vue/shared': link:../shared
 
   packages/shared:
@@ -183,6 +187,22 @@ packages:
     resolution: {integrity: sha512-a5Sab1C4/icpTZVzZc5Ghpz88yQtGOyNqYXcZgOssB2uuAr+wF/MvN6bgtW32q7HHrvBki+BsZ0OuNv6EV3K9g==, registry: https://registry.npm.taobao.org/, tarball: https://registry.npmmirror.com/@polka/url/-/url-1.0.0-next.21.tgz}
     name: '@polka/url'
     version: 1.0.0-next.21
+
+  registry.npmmirror.com/@rollup/plugin-alias/4.0.2_rollup@2.60.0:
+    resolution: {integrity: sha512-1hv7dBOZZwo3SEupxn4UA2N0EDThqSSS+wI1St1TNTBtOZvUchyIClyHcnDcjjrReTPZ47Faedrhblv4n+T5UQ==, registry: https://registry.npm.taobao.org/, tarball: https://registry.npmmirror.com/@rollup/plugin-alias/-/plugin-alias-4.0.2.tgz}
+    id: registry.npmmirror.com/@rollup/plugin-alias/4.0.2
+    name: '@rollup/plugin-alias'
+    version: 4.0.2
+    engines: {node: '>=14.0.0'}
+    peerDependencies:
+      rollup: ^1.20.0||^2.0.0||^3.0.0
+    peerDependenciesMeta:
+      rollup:
+        optional: true
+    dependencies:
+      rollup: registry.npmmirror.com/rollup/2.60.0
+      slash: registry.npmmirror.com/slash/4.0.0
+    dev: true
 
   registry.npmmirror.com/@rollup/plugin-commonjs/21.0.1_rollup@2.60.0:
     resolution: {integrity: sha512-EA+g22lbNJ8p5kuZJUYyhhDK7WgJckW5g4pNN7n4mAFUM96VuwUnNT3xr2Db2iCZPI1pJPbGyfT5mS9T1dHfMg==, registry: https://registry.npm.taobao.org/, tarball: https://registry.npmmirror.com/@rollup/plugin-commonjs/-/plugin-commonjs-21.0.1.tgz}
@@ -325,6 +345,20 @@ packages:
     version: 0.25.2
     dependencies:
       sirv: registry.npmmirror.com/sirv/2.0.2
+
+  registry.npmmirror.com/@vue/reactivity/3.2.45:
+    resolution: {integrity: sha512-PRvhCcQcyEVohW0P8iQ7HDcIOXRjZfAsOds3N99X/Dzewy8TVhTCT4uXpAHfoKjVTJRA0O0K+6QNkDIZAxNi3A==, registry: https://registry.npm.taobao.org/, tarball: https://registry.npmmirror.com/@vue/reactivity/-/reactivity-3.2.45.tgz}
+    name: '@vue/reactivity'
+    version: 3.2.45
+    dependencies:
+      '@vue/shared': registry.npmmirror.com/@vue/shared/3.2.45
+    dev: false
+
+  registry.npmmirror.com/@vue/shared/3.2.45:
+    resolution: {integrity: sha512-Ewzq5Yhimg7pSztDV+RH1UDKBzmtqieXQlpTVm2AwraoRL/Rks96mvd8Vgi7Lj+h+TH8dv7mXD3FRZR3TUvbSg==, registry: https://registry.npm.taobao.org/, tarball: https://registry.npmmirror.com/@vue/shared/-/shared-3.2.45.tgz}
+    name: '@vue/shared'
+    version: 3.2.45
+    dev: false
 
   registry.npmmirror.com/@yarn-tool/resolve-package/1.0.47:
     resolution: {integrity: sha512-Zaw58gQxjQceJqhqybJi1oUDaORT8i2GTgwICPs8v/X/Pkx35FXQba69ldHVg5pQZ6YLKpROXgyHvBaCJOFXiA==, registry: https://registry.npm.taobao.org/, tarball: https://registry.npmmirror.com/@yarn-tool/resolve-package/-/resolve-package-1.0.47.tgz}
@@ -1850,6 +1884,13 @@ packages:
       '@polka/url': registry.npmmirror.com/@polka/url/1.0.0-next.21
       mrmime: registry.npmmirror.com/mrmime/1.0.1
       totalist: registry.npmmirror.com/totalist/3.0.0
+
+  registry.npmmirror.com/slash/4.0.0:
+    resolution: {integrity: sha512-3dOsAHXXUkQTpOYcoAxLIorMTp4gIQr5IW3iVb7A7lFIp0VHhnynm9izx6TssdrIcVIESAlVjtnO2K8bg+Coew==, registry: https://registry.npm.taobao.org/, tarball: https://registry.npmmirror.com/slash/-/slash-4.0.0.tgz}
+    name: slash
+    version: 4.0.0
+    engines: {node: '>=12'}
+    dev: true
 
   registry.npmmirror.com/source-map-js/1.0.2:
     resolution: {integrity: sha512-R0XvVJ9WusLiqTCEiGCmICCMplcCkIwwR11mOSD9CR5u+IXYdiseeEuXCVAjS54zqwkLcPNnmU4OeJ6tUrWhDw==, registry: https://registry.npm.taobao.org/, tarball: https://registry.npmmirror.com/source-map-js/-/source-map-js-1.0.2.tgz}

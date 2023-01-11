@@ -122,6 +122,7 @@ function flushJobs(seen: CountMap) {
         }
         callWithErrorHandling(job, null, ErrorCodes.SCHEDULER)
       }
+      
     }
 
     // 传给 onBeforeUpdate 的回调中访问依然是之前的，但是执行完 onBeforeUpdate 之后，实际 dom 已经更新了

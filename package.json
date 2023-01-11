@@ -5,14 +5,15 @@
   "description": "",
   "scripts": {
     "dev": "node scripts/dev.js reactivity  -f global -s",
-    "test-r": "vitest packages/reactivity  --watch --run --update --coverage",
-    "test-rc": "vitest packages/runtime-core --watch --run --update --coverage",
+    "test-r": "vitest packages/reactivity  --watch --run --update ",
+    "test-rc": "vitest packages/runtime-core --watch --run --update",
     "preview": "vitest --ui"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@rollup/plugin-alias": "^4.0.2",
     "@rollup/plugin-commonjs": "^21.0.1",
     "@rollup/plugin-json": "^4.1.0",
     "@rollup/plugin-node-resolve": "^13.0.6",

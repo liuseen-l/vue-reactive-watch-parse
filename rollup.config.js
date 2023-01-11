@@ -2,7 +2,7 @@ import path from 'path';
 import ts from 'rollup-plugin-typescript2';
 import json from '@rollup/plugin-json';
 import { nodeResolve } from '@rollup/plugin-node-resolve'
-import commonjs from '@rollup/plugin-commonjs' 
+import commonjs from '@rollup/plugin-commonjs'
 /**
  * 
  * rollup.js编译源码中的模块引用默认只支持 ES6+的模块方式import/export。然而大量的npm模块是基于CommonJS模块方式，

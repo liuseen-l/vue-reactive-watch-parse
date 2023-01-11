@@ -1,4 +1,6 @@
 import { defineConfig } from "vitest/config";
+import alias from '@rollup/plugin-alias';
+
 import path from 'path'
 
 function _resolve(dir: string) {
@@ -11,8 +13,13 @@ export default defineConfig({
       '@vue/shared': _resolve('packages/shared/src/index.ts'),
     },
   },
-  // test: {
-  //   include: ["**/__tests__/*.spec.ts"],
-  //   exclude: ["**/node_modules/**", " **/dist/**"],
-  // }
+  test: {
+    
+    // include: ["**/__tests__/*.spec.ts"],
+    // exclude: ["**/node_modules/**", " **/dist/**"],
+    alias: {
+      '^@vue/(.*?)$': _resolve('/packages/$1/src'),
+    }
+    
+  },
 });
