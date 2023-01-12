@@ -146,6 +146,9 @@ export class ReactiveEffect<T = any> {
          *    // 执行到这里 dep3.n = 0000 0010 ，dep3.w = 0000 0010, 通过调用 wasTracked(dep) 进行判断，判断结果设置 shouldTrack = false, deps1.length == 2
          *  })
          * 
+         *  位运算实际上就是对依赖清除方式的一个优化，以前的话，每一次调用run方法，进入到这个函数当中时，就会去调用cleanupEffect函数去清空依赖，这样会有一个问题
+         *  就是有可能很多依赖，在这一次的trigger的过程中，会有很多之前被清空的依赖再次被收集，这样就产生了很多没有必要的删除操作，因此通过位运算进行标记，在effect执行完毕后
+         *  根据这些标记，再进行选择性的删除，这样避免了很多不必要的这个删除操作，因此删除的操作次数是小于等于之前一进来就删除所有依赖的操作次数
          */
     try {
       this.parent = activeEffect // 刚开始的activeEffect是undefined

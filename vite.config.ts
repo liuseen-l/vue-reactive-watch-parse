@@ -14,12 +14,10 @@ export default defineConfig({
     },
   },
   test: {
-    
     // include: ["**/__tests__/*.spec.ts"],
     // exclude: ["**/node_modules/**", " **/dist/**"],
-    alias: {
-      '^@vue/(.*?)$': _resolve('/packages/$1/src'),
-    }
-    
+    // alias: {
+    //   '^@vue/(.*?)$': _resolve('/packages/$1/src'),
+    // }
   },
 });

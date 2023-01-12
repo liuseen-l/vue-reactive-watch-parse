@@ -33,7 +33,6 @@ export const isString = (val: unknown): val is string => typeof val === 'string'
 // 判断是否是一个number类型的key
 export const isIntegerKey = (key: unknown) => isString(key) && key !== 'NaN' && key[0] !== '-' && '' + parseInt(key, 10) === key
 
-
 // 判断值是否发生变化 Object.is 比 == 甚至 === 更严格，== 会类型转换，0 -0 ===会相等，而 Object.is 返回false
 export const hasChanged = (value: any, oldValue: any): boolean => !Object.is(value, oldValue)
 
@@ -44,12 +43,10 @@ export const toNumber = (val: any): any => {
 
 export const isSymbol = (val: unknown): val is symbol => typeof val === 'symbol'
 
-
 export const toRawType = (value: unknown): string => {
   // extract "RawType" from strings like "[object RawType]"
   return toTypeString(value).slice(8, -1)
 }
-
 
 const cacheStringFunction = <T extends (str: string) => string>(fn: T): T => {
   const cache: Record<string, string> = Object.create(null)
