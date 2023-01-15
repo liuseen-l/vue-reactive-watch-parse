@@ -7,7 +7,6 @@ describe('ref', () => {
 
   test("watch", () => {
     const fnSpy = vi.fn()
-
     const obj = reactive({ a: 1 });
 
     watch(

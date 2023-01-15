@@ -372,6 +372,8 @@ function triggerEffect(
   // 防止 effect 中同时执行和赋值导致死循环
   if (effect !== activeEffect) {
     // 判断effect是否有调度器，比如计算属性就会传入这个属性，将控制权返回给用户
+    // 只有执行run的时候一定会设置activeEffect,而执行调度器scheduler不一定会设置acti    veEffect，因为调度器内部可能会执行某些effect的run方法，也可能不执行相关run方法
+    // 如果内部没有执行run方法，那么不会设置activeEffect,因此 不会执行依赖收集的过程，内部访问响应式数据不会收集依赖，因为当前的activeEffect = null
     if (effect.scheduler) {
       effect.scheduler()
     } else {

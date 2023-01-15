@@ -4,8 +4,15 @@ import { currentInstance } from "./component"
 import { callWithAsyncErrorHandling, callWithErrorHandling, ErrorCodes } from "./errorHandling"
 import { queueJob, queuePostFlushCb, SchedulerJob } from "./scheduler"
 
+/**
+  watch 和 watchEffect 都能响应式地执行有副作用的回调。它们之间的主要区别是追踪响应式依赖的方式：
 
-export type WatchEffect = (onCleanup: OnCleanup) => void
+  watch 只追踪明确侦听的数据源。它不会追踪任何在回调中访问到的东西（因为当监听的数据发生变化的时候走的调度器，调度器执行不会设置activeEffect）。另外，仅在数据源确实改变时才会触发回调。
+  watch 会避免在发生副作用时追踪依赖，因此，我们能更加精确地控制回调函数的触发时机。
+
+  watchEffect，则会在副作用发生期间追踪依赖。它会在同步执行过程中，自动追踪所有能访问到的响应式属性。
+  这更方便，而且代码往往更简洁，但有时其响应性依赖关系会不那么明确。
+ */
 
 export type WatchSource<T = any> = Ref<T> | ComputedRef<T> | (() => T)
 
@@ -256,8 +263,6 @@ function doWatch(
   // 以上的代码都是为收集依赖做铺垫
 
 
-
-
   // cleanup 用来存储用户注册的过期回调   
   let cleanup: () => void
 
@@ -294,9 +299,9 @@ function doWatch(
     // 如果watch有传入回调函数
     if (cb) {
       // watch(source, cb)
-      // 这里调用 effect.run 方法，获取到run方法执行完毕后的返回值，实际就是 watch 监听的对象（source）
+      // 这里调用 effect.run 方法，获取到run方法执行完毕后的返回值，实际就是 watch 监听的对象（source），执行完毕之后activeEffect又置为空，因此执行cb时，cb内部的响应式不会收集依赖
       const newValue = effect.run()
-      // 
+      
       if (deep || forceTrigger || (isMultiSource ? (newValue as any[]).some((v, i) => hasChanged(v, (oldValue as any[])[i]))
         : hasChanged(newValue, oldValue))
       ) {
@@ -348,7 +353,7 @@ function doWatch(
     scheduler = () => queueJob(job)
   }
 
-  // 核心调用 effect ，传入 getter 作为fn
+  // 核心调用 effect ，传入 getter 作为fn,source 收集的依赖就是这个 effect
   const effect = new ReactiveEffect(getter, scheduler)
 
   // initial run
@@ -411,3 +416,14 @@ export function traverse(value: unknown, seen?: Set<unknown>) {
   }
   return value
 }
+
+export type WatchEffect = (onCleanup: OnCleanup) => void
+
+// effect 可以接受一个 onCleanUp 过期回调，相比于watch，这里参数少了 oldValue,newValue
+export function watchEffect(
+  effect: WatchEffect,
+  options?: WatchOptionsBase
+): WatchStopHandle {
+  return doWatch(effect, null, options)
+}
+

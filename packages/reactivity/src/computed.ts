@@ -88,6 +88,7 @@ export class ComputedRefImpl<T> {
     if (self._dirty || !self._cacheable) {
       // 缓存结果 
       self._dirty = false
+      // 执行传给计算属性的函数 
       self._value = self.effect.run()!
     }
     return self._value
