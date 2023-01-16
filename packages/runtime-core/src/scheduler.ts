@@ -91,6 +91,8 @@ export function queuePostFlushCb(cb: SchedulerJobs) {
 function queueFlush() {
   if (!isFlushing && !isFlushPending) {
     isFlushPending = true
+    // pre 和 post 都是放到微任务队列，那么 flush 为 sync 的函数是处于同步任务的，会先执行，即使先更新pre的数据再更新sync的数据也是如此，因为js引擎机制是固定的
+    // 然后内部再以  pre,onBeforeUpdate  -> 真实dom更新完毕 -> post,onUpdate  的顺序去执行
     currentFlushPromise = resolvedPromise.then(flushJobs)
   }
 }
@@ -143,7 +145,6 @@ function flushJobs(seen: CountMap) {
     if (queue.length || pendingPostFlushCbs.length) {
       flushJobs(seen)
     }
-
   }
 }
 

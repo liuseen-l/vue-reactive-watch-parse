@@ -142,7 +142,6 @@ const INITIAL_WATCHER_VALUE = {}
 //   )
 // }
 
-
 // run 是收集依赖，并将监听的 source 作为 oldValue或newValue
 // scheduler 内部执行job ，job 执行实际就是执行 cb
 // source 可以是一个getter函数 也可以是一个响应式对象
@@ -166,6 +165,7 @@ function doWatch(
 
   // getter 作为传给 effect 的 fn
   let getter: () => any
+
   let forceTrigger = false
   // 数组的一个判断
   let isMultiSource = false
@@ -211,7 +211,8 @@ function doWatch(
       getter = () => callWithErrorHandling(source, instance, ErrorCodes.WATCH_GETTER)
     } else {
       // 如果调用 watch的时候，没有传入回调函数 scheduler 
-      // no cb -> simple effect
+      // no cb -> simple effect 
+      //  watchEffect 的 getter 就是走的这里
       getter = () => {
         if (instance && instance.isUnmounted) {
           return
@@ -223,6 +224,7 @@ function doWatch(
           source,
           instance,
           ErrorCodes.WATCH_CALLBACK,
+          // 传给用户使用的过期回调函数
           [onCleanup]
         )
       }
@@ -262,7 +264,6 @@ function doWatch(
   }
   // 以上的代码都是为收集依赖做铺垫
 
-
   // cleanup 用来存储用户注册的过期回调   
   let cleanup: () => void
 
@@ -281,27 +282,26 @@ function doWatch(
   //     finalData = res
   //   }
   // })
+
   let onCleanup: OnCleanup = (fn: () => void) => {
     // 将过期回调存储到 cleanup 中
     cleanup = effect.onStop = () => {
       callWithErrorHandling(fn, instance, ErrorCodes.WATCH_CLEANUP)
     }
-  }   
+  }
 
   // INITIAL_WATCHER_VALUE = {} ，如果不是数组，那么 oldValue 初始化就等于一个{ },如果是数组，那么 oldValue 中每一个元素值都赋值为 { }
   let oldValue: any = isMultiSource ? new Array((source as []).length).fill(INITIAL_WATCHER_VALUE) : INITIAL_WATCHER_VALUE
-
   const job: SchedulerJob = () => {
-
     if (!effect.active) {
       return
     }
-    // 如果watch有传入回调函数
+    // 通过判断是否传入 cb 函数，来判断当前使用的API是 watch 还是 watchEffect
     if (cb) {
       // watch(source, cb)
       // 这里调用 effect.run 方法，获取到run方法执行完毕后的返回值，实际就是 watch 监听的对象（source），执行完毕之后activeEffect又置为空，因此执行cb时，cb内部的响应式不会收集依赖
       const newValue = effect.run()
-      
+
       if (deep || forceTrigger || (isMultiSource ? (newValue as any[]).some((v, i) => hasChanged(v, (oldValue as any[])[i]))
         : hasChanged(newValue, oldValue))
       ) {
@@ -322,11 +322,15 @@ function doWatch(
         oldValue = newValue
       }
     } else {
-      // watchEffect
+      // watchEffect 走的函数，在我们初始化 watchEffect 之后，就会执行 effect.run()，他的执行和 watch开启 immediate 类似，都是立即去执行用传入的函数
+      // 对于 watchEffect 来说，执行了 run 方法之后，方法内如果访问了响应式数据，那么这些响应式数据就会和当前 effect 产生依赖关系，然后当响应式
+      // 数据发生变化的时候，也会和 watch 一样，去执行 scheduler 方法，scheduler 会根据 flush 的值去决定 job 的执行时机，就是控制执行当前这个 job 函数的时机，
+      // 在 job 函数内部，是通过 cb 来判断调用的API类型，判断是 watch 还是 watchEffect，如果是watchEffect，那么就很简单，再次执行 effect.run() 就可以，
+      // 其实 watchEffect 的实现思路就和 effect(()=>{ /**访问响应式数据 */}) 差不多，访问收集依赖，数据更新重新调用effect.run方法,，只不过 watchEffect 多绕了一下，
+      // 在数据更新的时候调用调度器，调度器内部根据 flush 的值来控制 job 的执行时机，然后 job 内部去调用 effect.run 重新执行副作用函数 
       effect.run()
     }
   }
-
   // important: mark the job as a watcher callback so that scheduler knows
   // it is allowed to self-trigger (#1727) 
   job.allowRecurse = !!cb
@@ -427,3 +431,24 @@ export function watchEffect(
   return doWatch(effect, null, options)
 }
 
+// watchEffect 的 flush 设置为 post 的简写函数
+export function watchPostEffect(
+  effect: WatchEffect,
+) {
+  return doWatch(
+    effect,
+    null,
+    { flush: 'post' }
+  )
+}
+
+// watchEffect 的 flush 设置为 sync 的简写函数
+export function watchSyncEffect(
+  effect: WatchEffect,
+) {
+  return doWatch(
+    effect,
+    null,
+    { flush: 'sync' }
+  )
+}
