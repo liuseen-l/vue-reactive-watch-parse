@@ -1,4 +1,4 @@
-import { isReadonly, isShallow, reactive, ReactiveFlags, readonly, Target, toRaw, toReactive, toReadonly } from './reactive'
+import { isReadonly, isShallow, reactive, ReactiveFlags, reactiveMap, readonly, readonlyMap, shallowReactiveMap, shallowReadonlyMap, Target, toRaw, toReactive, toReadonly } from './reactive'
 import { ITERATE_KEY, pauseTracking, resetTracking, track, trigger } from './effect'
 import { extend, hasChanged, hasOwn, isArray, isIntegerKey, isObject, isSymbol } from '@vue/shared'
 import { TrackOpTypes, TriggerOpTypes } from './operations'
@@ -82,11 +82,21 @@ function createGetter(isReadonly = false, shallow = false) {
     // 如果target已经被代理过了就直接返回true
     if (key === ReactiveFlags.IS_REACTIVE) {
       return !isReadonly
-    } else if (key === ReactiveFlags.IS_READONLY) {
+    } else if (key === ReactiveFlags.IS_READONLY) { // 返回自身是否为readonly
       return isReadonly
     } else if (key === ReactiveFlags.IS_SHALLOW) {
       return shallow
-    } else if (key === ReactiveFlags.RAW) {
+    } else if (key === ReactiveFlags.RAW &&
+      receiver ===
+      (isReadonly
+        ? shallow
+          ? shallowReadonlyMap
+          : readonlyMap
+        : shallow
+          ? shallowReactiveMap
+          : reactiveMap
+      ).get(target)
+    ) {
       // 用于获取 receiver 的原始对象
       return target
     }
@@ -125,6 +135,19 @@ function createGetter(isReadonly = false, shallow = false) {
       return res
     }
 
+    /**
+     *  const state = ref(1)
+     *  const ro = readonly(state)
+     *  假设 const obj = reactive({ a:ro }) 
+     * 
+     */
+    // console.log(obj.a) 1 ，因为 obj.a拿到的是ro，然后ro实际上也是一个proxy，然后代理的target是state，isRef(ro)中会判断ro.__v_isRef,然后触发getter，获取target[key]，而target就是state,key就是__v_isRef
+    // 然后就会返回res.value，触发ro的getter，然后获取target[key]，而target就是state,key就value，即state.value
+    if (isRef(res)) {
+      // ref unwrapping - skip unwrap for Array + integer key.
+      return targetIsArray && isIntegerKey(key) ? res : res.value
+    }
+
     // 如果返回的对象是对象，判断是否为 readonly ,如果是 readonly 那么递归调用readonly，保证深层次的对象也是只读的，reactive 同理，递归包裹深层次对象成为响应式，可以深层次的实现响应式
     if (isObject(res)) {
       return isReadonly ? readonly(res) : reactive(res)
@@ -143,9 +166,23 @@ function createSetter(shallow = false) {
       return false
     }
 
+    // 如果不是浅层次响应式，那么给一个reactive对象设置一个 shallow 或者 readonly 属性的时候不应该拿原始值，因为后面get的时候，会用reactive包裹的
     if (!shallow) {
       if (!isShallow(value) && !isReadonly(value)) {
-        // 防止污染原始数据
+        // 防止污染原始数据，不能让原始数据触发响应式
+        /**
+         * 可能有这样的操作，比如
+         * let obj = {
+         *    a:reactive({
+         *        b:2 
+         *    })
+         * }
+         * 
+         * a一来就是原始数据
+         * 
+         * 然后我们执行 obj.a = reactive({b:2}),value是一个响应式数据，因此需要对value进行toRaw转换，但是oldValue因为是初始化就创建的响应式数据，因此比较时，需要拿到他的原始值，用原始值
+         * 比较是否keyValue发生了变化
+         */
         oldValue = toRaw(oldValue)
         value = toRaw(value)
       }

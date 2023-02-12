@@ -82,4 +82,12 @@ describe('reactive', () => {
     expect(state_reactive.foo === state_readonly.foo).toBe(true) //  reactive({bar:1}) ==== reactive({bar:1})
   })
 
+
+  test('shallowReactive and reactive', () => {
+    const state_reactive = reactive({ foo: { bar: 1 } })
+    const state_readonly = shallowReactive(state_reactive)
+    expect(state_readonly === state_reactive).toBe(true)
+    expect(state_reactive.foo === state_readonly.foo).toBe(true) //  reactive({bar:1}) ==== reactive({bar:1})
+  })
+
 })

@@ -352,6 +352,9 @@ function doWatch(
   } else {
     // 默认为pre
     job.pre = true
+    // 设置watch job的id和当前watch所处的组件的id相同，由于id相同,后续在排序缓存队列时，watch的回调先执行
+    if (instance)
+      job.id = instance.uid
     // 当 wacth 监听的数据发生变化的时候，就会执行 scheduler，内部调用 queueJob，内部再调用 queueFlush，内部再调用 flushJobs，然后执行 job，job 实际上就是回调函数的执行
     // 为什么要将 scheduler 抽离成 job，因为用户可能开启了 immediate 属性，需要立即执行回调函数，而 job 内部就封装了回调函数的执行，如果开启了该属性。只需调用 job() 即可
     scheduler = () => queueJob(job)
@@ -378,7 +381,6 @@ function doWatch(
       remove(instance.scope.effects!, effect)
     }
   }
-
   return unwatch
 }
 

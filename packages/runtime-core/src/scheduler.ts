@@ -56,6 +56,20 @@ export function flushPreFlushCbs(
   }
 }
 
+function findInsertionIndex(id: number) {
+  // the start index should be `flushIndex + 1`
+  let start = flushIndex + 1
+  let end = queue.length
+
+  while (start < end) {
+    const middle = (start + end) >>> 1
+    const middleJobId = getId(queue[middle])
+    middleJobId < id ? (start = middle + 1) : (end = middle)
+  }
+
+  return start
+}
+
 // 直接执行job
 export function queueJob(job: SchedulerJob) {
   /**
@@ -70,6 +84,9 @@ export function queueJob(job: SchedulerJob) {
     // 如果是用户调用
     if (job.id == null) {
       queue.push(job)
+    } else {
+      // 组件更新触发的该函数和watch flush = pre | post 都走这里，插入之前，需要调整顺序，确保缓存队列中id的顺序是递增的，在调整的过程会发现，组件的更新job会排在在watch的job的前面
+      queue.splice(findInsertionIndex(job.id), 0, job)
     }
     queueFlush()
   }
@@ -124,7 +141,7 @@ function flushJobs(seen: CountMap) {
         }
         callWithErrorHandling(job, null, ErrorCodes.SCHEDULER)
       }
-      
+
     }
 
     // 传给 onBeforeUpdate 的回调中访问依然是之前的，但是执行完 onBeforeUpdate 之后，实际 dom 已经更新了
@@ -167,7 +184,7 @@ export function flushPostFlushCbs(seen: CountMap) {
 
     activePostFlushCbs.sort((a, b) => getId(a) - getId(b))
 
-    // 执行 watch 中 flush = post 以及 onUpdated 的回调函数，先执行 postJob，再执行 watch 回调
+    // 执行 watch 中 flush = post 以及 onUpdated 的回调函数，先执行 postJob，再执行 onUpdated 回调
     for (
       postFlushIndex = 0;
       postFlushIndex < activePostFlushCbs.length;
