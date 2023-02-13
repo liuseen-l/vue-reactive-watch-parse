@@ -1,0 +1,6 @@
+**/dist
+**/*.html
+**/node_modules
+**/extamples
+**/__tests__
+**/core
