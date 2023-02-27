@@ -307,6 +307,7 @@ export function trigger(target: object, key?: unknown, type?: TriggerOpTypes, ne
          *  */
         else if (isIntegerKey(key)) { // 如果为数组新增元素，应该触发与length相关的副作用函数
           deps.push(depsMap.get('length'))
+          
         }
         break
       // 只有当操作类型为 'DELETE' 时，才触发 target 身上 key == ITERATE_KEY 相关联的副作用函数重新执行
