@@ -322,12 +322,7 @@ function doWatch(
         oldValue = newValue
       }
     } else {
-      // watchEffect 走的函数，在我们初始化 watchEffect 之后，就会执行 effect.run()，他的执行和 watch开启 immediate 类似，都是立即去执行用传入的函数
-      // 对于 watchEffect 来说，执行了 run 方法之后，方法内如果访问了响应式数据，那么这些响应式数据就会和当前 effect 产生依赖关系，然后当响应式
-      // 数据发生变化的时候，也会和 watch 一样，去执行 scheduler 方法，scheduler 会根据 flush 的值去决定 job 的执行时机，就是控制执行当前这个 job 函数的时机，
-      // 在 job 函数内部，是通过 cb 来判断调用的API类型，判断是 watch 还是 watchEffect，如果是watchEffect，那么就很简单，再次执行 effect.run() 就可以，
-      // 其实 watchEffect 的实现思路就和 effect(()=>{ /**访问响应式数据 */}) 差不多，访问收集依赖，数据更新重新调用effect.run方法,，只不过 watchEffect 多绕了一下，
-      // 在数据更新的时候调用调度器，调度器内部根据 flush 的值来控制 job 的执行时机，然后 job 内部去调用 effect.run 重新执行副作用函数 
+      // watchEffect
       effect.run()
     }
   }
@@ -372,6 +367,19 @@ function doWatch(
       // 执行effect，进行依赖的收集，这里返回的就是监听的对象，即 source
       oldValue = effect.run()
     }
+  } else if (flush === 'post') {
+    // queuePostRenderEffect(
+    //   effect.run.bind(effect),
+    //   instance && instance.suspense
+    // )
+  } else {
+    // watchEffect 走的函数，在我们初始化 watchEffect 之后，就会执行 effect.run()，他的执行和 watch开启 immediate 类似，都是立即去执行用传入的函数
+    // 对于 watchEffect 来说，执行了 run 方法之后，方法内如果访问了响应式数据，那么这些响应式数据就会和当前 effect 产生依赖关系，然后当响应式
+    // 数据发生变化的时候，也会和 watch 一样，去执行 scheduler 方法，scheduler 会根据 flush 的值去决定 job 的执行时机，就是控制执行当前这个 job 函数的时机，
+    // 在 job 函数内部，是通过 cb 来判断调用的API类型，判断是 watch 还是 watchEffect，如果是watchEffect，那么就很简单，再次执行 effect.run() 就可以，
+    // 其实 watchEffect 的实现思路就和 effect(()=>{ /**访问响应式数据 */}) 差不多，访问收集依赖，数据更新重新调用effect.run方法,，只不过 watchEffect 多绕了一下，
+    // 在数据更新的时候调用调度器，调度器内部根据 flush 的值来控制 job 的执行时机，然后 job 内部去调用 effect.run 重新执行副作用函数 
+    effect.run()
   }
 
   // 停止监听
