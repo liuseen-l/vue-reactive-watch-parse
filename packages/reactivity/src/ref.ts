@@ -1,5 +1,5 @@
 import { createDep, Dep } from './dep'
-import { hasChanged, IfAny, isArray  } from '@vue/shared'
+import { hasChanged, IfAny, isArray } from '@vue/shared'
 import { isProxy, isReadonly, isShallow, toRaw, toReactive } from './reactive'
 import { activeEffect, shouldTrack, trackEffects, triggerEffects } from './effect'
 
@@ -45,7 +45,8 @@ function createRef(rawValue: unknown, shallow: boolean) {
  * 原因在于 ref 对引用数据类型就行了 toReactive 转换 ref.value 返回的实际是 reactive({a:1}) 然后访问响应式的a属性，它自身和副作用函数建立了依赖关系
  * 因此 ref.value.a = 2 是 reactive({a:1}) 触发的响应式，但是 shallowRef 没有转换，返回的就是 {a:1}，不具备响应式
  * 
- *  */ class RefImpl<T> {
+ *  */
+class RefImpl<T> {
   private _value: T
   private _rawValue: T // 如果是 ref 存储 value 的原始对象，如果是 shallowRef 直接存储 value
 
@@ -62,7 +63,6 @@ function createRef(rawValue: unknown, shallow: boolean) {
 
     // 对原始数据进行代理，首先判断是不是浅层次的响应式，如果不是就进行响应式的转换，这里转换的时候toReactive内部进行了对象判断，如果不是对象类型，直接返回的就是value
     this._value = __v_isShallow ? value : toReactive(value)
-
     /**
      *  执行到这里的时候,ref的实例已经是创建完成
      *    让我们回顾整个创建的过程
@@ -251,7 +251,7 @@ export function toRefs<T extends object>(object: T): ToRefs<T> {
    *  如果是响应式对象
    *    const key = isArray(target) ? 'length' : ITERATE_KEY
    *    track(target, key, TrackOpTypes.ITERATE) 会收集依赖，如果 object 发生变化会重新执行 toRefs，因为 toRefs 实际上也在 effect 当中的
-   *  */ 
+   *  */
   for (const key in object) {
     ret[key] = toRef(object, key)
   }
