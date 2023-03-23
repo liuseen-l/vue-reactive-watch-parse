@@ -63,6 +63,7 @@ class RefImpl<T> {
 
     // 对原始数据进行代理，首先判断是不是浅层次的响应式，如果不是就进行响应式的转换，这里转换的时候toReactive内部进行了对象判断，如果不是对象类型，直接返回的就是value
     this._value = __v_isShallow ? value : toReactive(value)
+
     /**
      *  执行到这里的时候,ref的实例已经是创建完成
      *    让我们回顾整个创建的过程

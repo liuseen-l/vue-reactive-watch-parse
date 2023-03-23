@@ -407,8 +407,6 @@ function createReadonlyMethod(type: TriggerOpTypes): Function {
 
 
 function createInstrumentations() {
-
-
   const mutableInstrumentations: Record<string, Function | number> = {
     get(this: MapTypes, key: unknown) { // Map
       // 此时的this是map的代理对象
@@ -564,6 +562,7 @@ function createInstrumentationGetter(isReadonly: boolean, shallow: boolean) {
       return target
     }
 
+    // 判断当前访问的key是否是集合原本的属性
     return Reflect.get(hasOwn(instrumentations, key) && key in target
       ? instrumentations
       : target, key, receiver)
