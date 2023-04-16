@@ -143,8 +143,6 @@ function flushJobs(seen: CountMap) {
 
     }
 
-    // 传给 onBeforeUpdate 的回调中访问依然是之前的，但是执行完 onBeforeUpdate 之后，实际 dom 已经更新了
-    // 正如 onBeforeUpdate（失去响应式之前，dom更新之前） onUpdated（dom 更新之后） 的定义一样
   } finally {
     // 重置 job 访问下标
     flushIndex = 0
