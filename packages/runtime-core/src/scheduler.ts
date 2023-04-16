@@ -131,8 +131,7 @@ function flushJobs(seen: CountMap) {
   const check = (job: SchedulerJob) => checkRecursiveUpdates(seen, job)
 
   try {
-    // 这当中会执行 job,当flush = pre 的时候，job就是这里执行的，执行完 watch 的 pre job 之后，onBeforeUpdate就开始执行，onBeforeUpDate 的回调函数也在 queue 中
-    // 虽然 preJob 先执行了，也就是数据已经发生了变化，但是还没有渲染真实 dom ，因此这里如果显示数据会更新，但是访问dom还是没有更新，vue数据更新是同步的，dom更新是异步的（需要进行虚拟dom比较操作再更新）
+    // 这当中会执行 job,当watch flush = pre 的时候，job就是这里执行的，执行完 watch 的 pre job 之后，还会执行组件更新的effect，也就是update函数（不是生命周期那个钩子函数）
     for (flushIndex = 0; flushIndex < queue.length; flushIndex++) {
       const job = queue[flushIndex]
       if (job && job.active !== false) {
@@ -184,7 +183,7 @@ export function flushPostFlushCbs(seen: CountMap) {
 
     activePostFlushCbs.sort((a, b) => getId(a) - getId(b))
 
-    // 执行 watch 中 flush = post 以及 onUpdated 的回调函数，先执行 postJob，再执行 onUpdated 回调
+    // 执行 watch 中 flush = post 以及 onUpdated 的回调函数，先执行 postJob
     for (
       postFlushIndex = 0;
       postFlushIndex < activePostFlushCbs.length;
