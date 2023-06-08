@@ -142,7 +142,6 @@ function flushJobs(seen: CountMap) {
       }
 
     }
-    
   } finally {
     // 重置 job 访问下标
     flushIndex = 0
@@ -181,7 +180,11 @@ export function flushPostFlushCbs(seen: CountMap) {
 
     activePostFlushCbs.sort((a, b) => getId(a) - getId(b))
 
+<<<<<<< HEAD
     // 执行 watch 中 flush = post 的回调函数
+=======
+    // 执行 watch 中 flush = post 以及 onUpdated 的回调函数，先执行 postJob
+>>>>>>> 74cc21c9ae2fa670793c173a3f7db1c98aa285dd
     for (
       postFlushIndex = 0;
       postFlushIndex < activePostFlushCbs.length;
