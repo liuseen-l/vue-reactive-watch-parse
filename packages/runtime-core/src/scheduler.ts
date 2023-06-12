@@ -145,7 +145,6 @@ function flushJobs(seen: CountMap) {
   } finally {
     // 重置 job 访问下标
     flushIndex = 0
-
     // 清空 queue 队列中的 job
     queue.length = 0
 
