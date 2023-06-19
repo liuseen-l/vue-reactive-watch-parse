@@ -171,7 +171,6 @@ export function flushPostFlushCbs(seen: CountMap) {
     }
 
     activePostFlushCbs = deduped
-
     {
       seen = seen || new Map()
     }
